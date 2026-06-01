@@ -1,0 +1,12 @@
+{
+  "name": "mymanabi",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "report:example": "node src/generate-daily-report.mjs --data-dir examples/data-dir --learner learner-a --date 2026-05-31 --stdout",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

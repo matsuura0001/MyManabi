@@ -9,12 +9,23 @@
 - AI で解決できない問題の引き継ぎ
 - 到達水準・安定性・つまずき方の把握
 
-> **状態**: 設計・PoC 段階。アプリのコードはまだ含まれていない。
+> **状態**: 設計・PoC 段階。最初の縦切りとして、合成学習イベントから日次レポートを生成できる。
 
 ## ドキュメント
 
 - [コンセプト](docs/concept/README.md) — 目的・方針・前提・到達点・保留事項・リスク
 - [仕様](docs/spec/README.md) — 学習フロー・理解度測定・教材管理・学習履歴・レポート・データ配置
+- [初期 PoC ロードマップ](docs/spec/initial-poc-roadmap.md) — 小さく検証する実装順と最初の縦切り
+
+## 最初の縦切りを試す
+
+Node.js 20 以降で、公開用の合成イベントから日次レポートを生成する。
+
+```powershell
+node src/generate-daily-report.mjs --data-dir examples/data-dir --learner learner-a --date 2026-05-31 --stdout
+```
+
+実運用時は `--data-dir` にリポジトリ外の保存先を指定する。
 
 ## データの扱い（重要）
 

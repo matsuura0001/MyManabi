@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/mymanabi/learning-event.schema.json",
+  "title": "MyManabi learning event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "occurred_at",
+    "learner_id",
+    "unit",
+    "template_id",
+    "question",
+    "answer",
+    "grading",
+    "duration_seconds",
+    "flags",
+    "explanations",
+    "adult_review_required"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "event_id": { "type": "string", "minLength": 1 },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "learner_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "unit": { "type": "string", "minLength": 1 },
+    "template_id": { "type": "string", "minLength": 1 },
+    "question": { "type": "string", "minLength": 1 },
+    "answer": { "type": ["string", "null"] },
+    "grading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result", "method", "reason"],
+      "properties": {
+        "result": { "enum": ["correct", "incorrect", "unknown"] },
+        "method": { "enum": ["deterministic", "ai", "adult", "not-graded"] },
+        "reason": { "type": "string" }
+      }
+    },
+    "duration_seconds": { "type": "integer", "minimum": 0 },
+    "flags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["did_not_know", "disputed", "anxious"],
+      "properties": {
+        "did_not_know": { "type": "boolean" },
+        "disputed": { "type": "boolean" },
+        "anxious": { "type": "boolean" }
+      }
+    },
+    "explanations": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "enum": ["simpler-words", "concrete-example", "detailed-steps", "easier-similar-question"]
+      }
+    },
+    "adult_review_required": { "type": "boolean" }
+  }
+}
