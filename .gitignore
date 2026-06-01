@@ -1,0 +1,25 @@
+# --- 非公開データ（絶対にコミットしない） ---
+# 学習者データ・教材コンテンツは本リポジトリ外の DATA_DIR に置く。
+# 念のため、リポジトリ内に同名フォルダがあっても追跡しない。
+/data/
+/learners/
+/content/
+
+# --- Obsidian（ローカル設定） ---
+.obsidian/
+
+# --- OS / エディタ生成物 ---
+Thumbs.db
+Desktop.ini
+.DS_Store
+*~
+.vscode/
+.idea/
+
+# --- 将来のビルド / 依存（コード追加時に有効化される） ---
+node_modules/
+dist/
+build/
+*.log
+.env
+.env.local
