@@ -1,0 +1,20 @@
+{
+  "id": "synthetic-fraction-basic-01",
+  "subject": "算数",
+  "unitId": "fraction-addition",
+  "skillIds": ["same-denominator-addition"],
+  "questionType": "numeric",
+  "title": "次の計算をしてみよう",
+  "body": "1/4 + 2/4 = ?",
+  "note": "合成問題: 同分母のたし算",
+  "answer": {
+    "type": "exact-text",
+    "value": "3/4"
+  },
+  "source": {
+    "type": "local-generated",
+    "templateId": "same-denominator-basic"
+  },
+  "reviewStatus": "auto-approved",
+  "purposes": ["learning", "review"]
+}

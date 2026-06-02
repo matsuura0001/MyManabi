@@ -1,0 +1,23 @@
+{
+  "id": "synthetic-fraction-story-01",
+  "subject": "算数",
+  "unitId": "fraction-addition",
+  "skillIds": ["same-denominator-addition"],
+  "questionType": "word-problem",
+  "title": "文章を読んで、式と答えを書いてみよう",
+  "body": "ジュースが 3/8 L あります。そこへ 2/8 L を足しました。ジュースは全部で何 L になりましたか。",
+  "note": "合成問題: 前に学んだ「同分母のたし算」の確認です",
+  "answer": {
+    "type": "exact-text",
+    "value": "5/8 L"
+  },
+  "source": {
+    "type": "adult-authored"
+  },
+  "reviewStatus": "adult-approved",
+  "purposes": ["learning", "review", "assessment"],
+  "assessment": {
+    "equivalenceGroupId": "fraction-addition-basic-001",
+    "relation": "isomorphic"
+  }
+}

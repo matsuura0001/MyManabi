@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/mymanabi/question.schema.json",
+  "title": "MyManabi question",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "subject",
+    "unitId",
+    "skillIds",
+    "questionType",
+    "title",
+    "body",
+    "note",
+    "answer",
+    "source",
+    "reviewStatus",
+    "purposes"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "subject": { "type": "string", "minLength": 1 },
+    "unitId": { "type": "string", "minLength": 1 },
+    "skillIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "questionType": {
+      "enum": ["numeric", "kanji", "multiple-choice", "word-problem", "free-text", "handwriting", "speech"]
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "body": { "type": "string", "minLength": 1 },
+    "note": { "type": "string" },
+    "answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "enum": ["exact-text", "numeric", "choice", "ai-assisted"] },
+        "value": { "type": "string", "minLength": 1 }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["adult-authored", "ai-generated", "local-generated", "imported"] },
+        "templateId": { "type": "string", "minLength": 1 },
+        "documentId": { "type": "string", "minLength": 1 },
+        "page": { "type": "integer", "minimum": 1 },
+        "itemLabel": { "type": "string", "minLength": 1 }
+      }
+    },
+    "reviewStatus": {
+      "enum": ["draft", "adult-approved", "auto-approved", "suspended"]
+    },
+    "purposes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["learning", "review", "assessment"] }
+    },
+    "assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["equivalenceGroupId", "relation"],
+      "properties": {
+        "equivalenceGroupId": { "type": "string", "minLength": 1 },
+        "relation": { "enum": ["same-question", "isomorphic", "applied"] }
+      }
+    }
+  }
+}

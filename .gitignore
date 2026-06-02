@@ -20,6 +20,7 @@ Desktop.ini
 node_modules/
 dist/
 build/
+/app/src-tauri/target/
 *.log
 .env
 .env.local

@@ -13,6 +13,7 @@
 
 ## ドキュメント
 
+- [アーキテクチャ概要](docs/architecture.md) — 全体構成・責務分担・データ配置・主要フローの図解
 - [コンセプト](docs/concept/README.md) — 目的・方針・前提・到達点・保留事項・リスク
 - [仕様](docs/spec/README.md) — 学習フロー・理解度測定・教材管理・学習履歴・レポート・データ配置
 - [初期 PoC ロードマップ](docs/spec/initial-poc-roadmap.md) — 小さく検証する実装順と最初の縦切り

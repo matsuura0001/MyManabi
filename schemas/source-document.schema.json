@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/mymanabi/source-document.schema.json",
+  "title": "MyManabi source document",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "kind",
+    "originalFileName",
+    "storedPath",
+    "importedAtEpochSeconds",
+    "byteSize",
+    "status",
+    "extractionStatus"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "kind": { "const": "pdf" },
+    "originalFileName": { "type": "string", "minLength": 1 },
+    "storedPath": { "type": "string", "pattern": "^sources/[A-Za-z0-9_-]+\\.pdf$" },
+    "sourceUrl": { "type": ["string", "null"], "format": "uri" },
+    "importedAtEpochSeconds": { "type": "integer", "minimum": 0 },
+    "byteSize": { "type": "integer", "minimum": 1 },
+    "status": { "enum": ["stored"] },
+    "extractionStatus": { "enum": ["pending-review"] }
+  }
+}
