@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MyManabi.OcrWorker/MyManabi.OcrWorker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MyManabi.OcrWorker.Tests/MyManabi.OcrWorker.Tests.csproj" />
+  </Folder>
+</Solution>

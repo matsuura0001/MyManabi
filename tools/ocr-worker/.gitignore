@@ -1,0 +1,11 @@
+# .NET build output
+bin/
+obj/
+
+# Tesseract trained data — downloaded per machine, never committed (large, Apache-2.0).
+# Fetch with scripts/get-tessdata.ps1.
+tessdata/
+*.traineddata
+
+# Local extraction output / sample PDFs must never land in the repo.
+*.pdf
