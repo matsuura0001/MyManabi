@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { ExtractionCandidate, ExtractionResult, PromotionForm } from "../../domain/extraction";
 import type { Question } from "../../domain/question";
 import { PromotionEditor } from "./PromotionEditor";
+import { RegionEditModal } from "./RegionEditModal";
 
 function defaultPromotionForm(candidate: ExtractionCandidate, ocrText: string): PromotionForm {
   return {
@@ -38,6 +39,7 @@ export function ExtractionReview({
   const [promotedQuestionIds, setPromotedQuestionIds] = useState<string[]>([]);
   const [promotionForms, setPromotionForms] = useState<Record<string, PromotionForm>>({});
   const [promotingCandidateId, setPromotingCandidateId] = useState<string | null>(null);
+  const [regionEditCandidate, setRegionEditCandidate] = useState<ExtractionCandidate | null>(null);
 
   // Single-pass count instead of three separate .filter() calls
   const counts = result.candidates.reduce(
@@ -121,6 +123,7 @@ export function ExtractionReview({
   }
 
   return (
+    <>
     <section className="extraction-review">
       <div className="import-success">
         <p>
@@ -203,6 +206,13 @@ export function ExtractionReview({
                     draft に戻す
                   </button>
                 )}
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={() => setRegionEditCandidate(candidate)}
+                >
+                  領域を再指定
+                </button>
               </div>
               {candidate.reviewStatus === "adult-approved" ? (
                 <PromotionEditor
@@ -223,5 +233,27 @@ export function ExtractionReview({
         })}
       </div>
     </section>
+
+    {regionEditCandidate && (
+      <RegionEditModal
+        candidate={regionEditCandidate}
+        extractionPath={extractionPath}
+        sourceDocumentId={sourceDocumentId}
+        onClose={() => setRegionEditCandidate(null)}
+        onUpdated={(updatedResult) => {
+          setResult(updatedResult);
+          const updated = updatedResult.candidates.find(
+            (c) => c.candidateId === regionEditCandidate.candidateId,
+          );
+          if (updated) {
+            setCandidateTexts((current) => ({
+              ...current,
+              [updated.candidateId]: updated.ocrText,
+            }));
+          }
+        }}
+      />
+    )}
+    </>
   );
 }

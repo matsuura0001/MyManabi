@@ -11,8 +11,18 @@ if (options is null)
 
 try
 {
-    ExtractionResult result = Worker.Run(options);
-    Console.Out.WriteLine(JsonSerializer.Serialize(result, JsonConfig.Options));
+    if (options.CandidateId is not null)
+    {
+        // Re-extraction mode: output a single CandidateResult JSON so the Rust host
+        // can merge it into the existing extraction-result.json.
+        CandidateResult candidate = Worker.RunRegion(options);
+        Console.Out.WriteLine(JsonSerializer.Serialize(candidate, JsonConfig.Options));
+    }
+    else
+    {
+        ExtractionResult result = Worker.Run(options);
+        Console.Out.WriteLine(JsonSerializer.Serialize(result, JsonConfig.Options));
+    }
     return 0;
 }
 catch (Exception ex)

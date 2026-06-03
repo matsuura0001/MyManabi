@@ -243,6 +243,82 @@ pub fn review_extraction_candidate(
     Ok(result)
 }
 
+/// Re-run OCR on a user-specified region for one candidate.
+/// The worker emits a single CandidateResult JSON to stdout; this function
+/// merges it into the existing extraction-result.json without touching other candidates.
+pub async fn reextract_candidate_region(
+    data_dir: &Path,
+    source_document_id: &str,
+    candidate_id: &str,
+    region: &RegionRatio,
+) -> Result<ExtractionResult, String> {
+    // Load existing result to get the page number for this candidate
+    let mut result = load_extraction_result(data_dir, source_document_id)?;
+    let page = result
+        .candidates
+        .iter()
+        .find(|c| c.candidate_id == candidate_id)
+        .map(|c| c.page)
+        .ok_or_else(|| format!("candidate not found: {candidate_id}"))?;
+
+    let mut command = worker_command();
+    command
+        .arg("--source-document")
+        .arg(source_document_id)
+        .arg("--data-dir")
+        .arg(data_dir)
+        .arg("--candidate-id")
+        .arg(candidate_id)
+        .arg("--page")
+        .arg(page.to_string())
+        .arg("--region")
+        .arg(format!("{},{},{},{}", region.x, region.y, region.width, region.height))
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let output = command.output().await.map_err(|error| {
+        format!(
+            "launch OCR worker: {error}. Build tools/ocr-worker (dotnet build -c Release) \
+             or set MYMANABI_OCR_WORKER to the executable."
+        )
+    })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "OCR worker failed ({}): {}",
+            output.status,
+            stderr.trim()
+        ));
+    }
+
+    // Worker stdout is a single CandidateResult JSON
+    let updated: CandidateResult = serde_json::from_slice(&output.stdout).map_err(|error| {
+        let preview = String::from_utf8_lossy(&output.stdout);
+        format!(
+            "parse re-extraction result: {error}. stdout (first 200 chars): {}",
+            &preview[..preview.len().min(200)]
+        )
+    })?;
+
+    // Merge updated candidate into existing result (keep all others unchanged)
+    let pos = result
+        .candidates
+        .iter()
+        .position(|c| c.candidate_id == candidate_id)
+        .ok_or_else(|| format!("candidate not found after re-extraction: {candidate_id}"))?;
+    result.candidates[pos] = updated;
+
+    let path = extraction_result_path(data_dir, source_document_id)?;
+    let bytes = serde_json::to_vec_pretty(&result)
+        .map_err(|error| format!("serialize extraction result: {error}"))?;
+    std::fs::write(&path, bytes)
+        .map_err(|error| format!("write extraction result {}: {error}", path.display()))?;
+
+    Ok(result)
+}
+
 fn validate_source_document_id(source_document_id: &str) -> Result<(), String> {
     if !source_document_id.is_empty()
         && source_document_id

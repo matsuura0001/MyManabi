@@ -1,6 +1,5 @@
 import { Header } from "../../components/Header";
 import { FeedbackBanner } from "../../components/FeedbackBanner";
-import { FeedbackStylePicker } from "../../components/FeedbackStylePicker";
 import type { LearnerProps } from "./types";
 
 export function VariantA(props: LearnerProps) {
@@ -128,7 +127,6 @@ export function VariantA(props: LearnerProps) {
           </div>
         </article>
         <small className="question-bank-source">出題元: {props.questionBankSource}</small>
-        <FeedbackStylePicker style={props.feedbackStyle} setStyle={props.setFeedbackStyle} />
       </section>
     </main>
   );

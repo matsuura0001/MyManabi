@@ -109,6 +109,18 @@ fn load_extraction_result(
 }
 
 #[tauri::command]
+async fn reextract_candidate_region(
+    data_dir: Option<String>,
+    source_document_id: String,
+    candidate_id: String,
+    region: ocr_worker::RegionRatio,
+) -> Result<ocr_worker::ExtractionResult, String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    ocr_worker::reextract_candidate_region(&data_dir, &source_document_id, &candidate_id, &region)
+        .await
+}
+
+#[tauri::command]
 fn review_extraction_candidate(
     data_dir: Option<String>,
     source_document_id: String,
@@ -214,7 +226,8 @@ pub fn run() {
             extraction_result_path,
             load_extraction_result,
             review_extraction_candidate,
-            promote_extraction_candidate
+            promote_extraction_candidate,
+            reextract_candidate_region
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

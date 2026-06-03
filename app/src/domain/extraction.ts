@@ -1,3 +1,10 @@
+export type RegionRatio = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type ExtractionResult = {
   pageCount: number;
   candidates: ExtractionCandidate[];
@@ -10,6 +17,8 @@ export type ExtractionCandidate = {
   candidateId: string;
   page: number;
   itemLabel?: string;
+  region: RegionRatio;
+  regionImagePath?: string;
   ocrText: string;
   confidence: number;
   suggestedQuestionType: string;

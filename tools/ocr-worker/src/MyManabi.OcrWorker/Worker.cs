@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
@@ -185,6 +186,78 @@ public static class Worker
         string json = JsonSerializer.Serialize(result, JsonConfig.Options);
         File.WriteAllText(Path.Combine(outputDir, "extraction-result.json"), json, new UTF8Encoding(false));
         Console.Error.WriteLine($"wrote {result.PageCount} page(s), {result.Candidates.Count} candidate(s) -> {relativeDir}/extraction-result.json");
+    }
+
+    /// <summary>
+    /// Re-run OCR on a single user-specified region of an already-rasterized page.
+    /// Outputs a single <see cref="CandidateResult"/> JSON to stdout so the Rust host
+    /// can merge it into the existing extraction-result.json without overwriting other candidates.
+    /// </summary>
+    public static CandidateResult RunRegion(CliOptions options)
+    {
+        string dataDir = options.DataDir is null ? DataDir.Resolve() : Path.GetFullPath(options.DataDir);
+        var (document, _) = ResolveSource(options, dataDir);
+
+        int page = options.Page!.Value;
+        var region = options.Region!;
+        string candidateId = options.CandidateId!;
+
+        string outputDir = Path.Combine(dataDir, "content", "extractions", document.Id);
+        string pagePath = Path.Combine(outputDir, $"page-{page:D3}.png");
+
+        if (!File.Exists(pagePath))
+            throw new FileNotFoundException(
+                $"page image not found: {pagePath}. Run full extraction first to generate page images.");
+
+        using var pageBitmap = SkiaSharp.SKBitmap.Decode(pagePath)
+            ?? throw new InvalidOperationException($"could not decode page image: {pagePath}");
+
+        var pixelRect = new PixelRect(
+            X: (int)(region.X * pageBitmap.Width),
+            Y: (int)(region.Y * pageBitmap.Height),
+            Width: (int)(region.Width * pageBitmap.Width),
+            Height: (int)(region.Height * pageBitmap.Height)
+        );
+
+        string tessdata = TessdataResolver.Resolve(options.Tessdata, dataDir);
+        string language = TessdataResolver.ResolveLanguage(tessdata, options.Language);
+        Console.Error.WriteLine(
+            $"re-extract {candidateId} page={page} " +
+            $"region=({region.X:F3},{region.Y:F3},{region.Width:F3},{region.Height:F3})");
+        Console.Error.WriteLine($"tessdata : {tessdata} (lang={language})");
+
+        using var crop = ImageOps.Crop(pageBitmap, pixelRect, pad: 4)
+            ?? throw new InvalidOperationException("specified region is empty or out of bounds");
+
+        using var ocr = new OcrProcessor(tessdata, language);
+        OcrPageOutput ocrOutput = ocr.Recognize(crop);
+
+        string cropFile = CropFileName(candidateId, page);
+        ImageOps.SavePng(crop, Path.Combine(outputDir, cropFile));
+
+        string relativeDir = $"content/extractions/{document.Id}";
+        var candidate = new CandidateResult
+        {
+            CandidateId = candidateId,
+            Page = page,
+            Region = ImageOps.ToRatio(pixelRect, pageBitmap.Width, pageBitmap.Height),
+            RegionImagePath = $"{relativeDir}/{cropFile}",
+            OcrText = ocrOutput.Text,
+            Confidence = Math.Round(ocrOutput.MeanConfidence, 3),
+            SuggestedQuestionType = QuestionTypeHeuristic.Suggest(ocrOutput.Text),
+            ReviewStatus = "draft",
+        };
+        Console.Error.WriteLine($"re-extracted {candidateId}: {ocrOutput.Lines.Count} line(s), conf={candidate.Confidence:F3}");
+        return candidate;
+    }
+
+    private static string CropFileName(string candidateId, int page)
+    {
+        // candidateId format: {docId}-p001-c02 — extract the trailing -cNN index
+        int idx = candidateId.LastIndexOf("-c");
+        if (idx >= 0 && int.TryParse(candidateId[(idx + 2)..], CultureInfo.InvariantCulture, out int index))
+            return $"page-{page:D3}-c{index:D2}.png";
+        return $"page-{page:D3}-region.png";
     }
 
     private static (SourceDocument Document, string SourcePath) ResolveSource(CliOptions options, string dataDir)

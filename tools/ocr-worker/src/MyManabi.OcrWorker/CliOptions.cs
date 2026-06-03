@@ -14,6 +14,12 @@ public sealed class CliOptions
     public bool NoCrops { get; private set; }
     public int MaxPages { get; private set; }
 
+    // Re-extraction mode: re-run OCR on a single candidate region.
+    // All three must be set together.
+    public string? CandidateId { get; private set; }
+    public int? Page { get; private set; }
+    public RegionRatio? Region { get; private set; }
+
     /// <summary>Returns null when help was requested or parsing failed (usage already printed).</summary>
     public static CliOptions? Parse(string[] args)
     {
@@ -60,6 +66,15 @@ public sealed class CliOptions
                     case "--max-pages":
                         o.MaxPages = int.Parse(Next(arg), CultureInfo.InvariantCulture);
                         break;
+                    case "--candidate-id":
+                        o.CandidateId = Next(arg);
+                        break;
+                    case "--page":
+                        o.Page = int.Parse(Next(arg), CultureInfo.InvariantCulture);
+                        break;
+                    case "--region":
+                        o.Region = ParseRegion(Next(arg));
+                        break;
                     default:
                         Console.Error.WriteLine($"unknown argument: {arg}");
                         PrintUsage();
@@ -86,7 +101,25 @@ public sealed class CliOptions
             return null;
         }
 
+        // Re-extraction mode requires all three: --candidate-id, --page, --region
+        bool hasReextract = o.CandidateId is not null || o.Page is not null || o.Region is not null;
+        bool reextractComplete = o.CandidateId is not null && o.Page is not null && o.Region is not null;
+        if (hasReextract && !reextractComplete)
+        {
+            Console.Error.WriteLine("error: --candidate-id, --page, and --region must all be specified together");
+            return null;
+        }
+
         return o;
+    }
+
+    private static RegionRatio ParseRegion(string value)
+    {
+        var parts = value.Split(',');
+        if (parts.Length != 4)
+            throw new ArgumentException($"expected x,y,w,h ratios but got: {value}");
+        double Parse(string s) => double.Parse(s.Trim(), CultureInfo.InvariantCulture);
+        return new RegionRatio { X = Parse(parts[0]), Y = Parse(parts[1]), Width = Parse(parts[2]), Height = Parse(parts[3]) };
     }
 
     private static void PrintUsage()
