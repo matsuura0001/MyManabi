@@ -7,6 +7,7 @@ export type RegionRatio = {
 
 export type ExtractionResult = {
   pageCount: number;
+  pages: Array<{ page: number; imagePath: string }>;
   candidates: ExtractionCandidate[];
   metrics: {
     extractionRoute: string;

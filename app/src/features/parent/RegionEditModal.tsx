@@ -8,12 +8,14 @@ export function RegionEditModal({
   candidate,
   extractionPath,
   sourceDocumentId,
+  pages,
   onClose,
   onUpdated,
 }: {
   candidate: ExtractionCandidate;
   extractionPath: string | null;
   sourceDocumentId: string;
+  pages: Array<{ page: number; imagePath: string }>;
   onClose: () => void;
   onUpdated: (result: ExtractionResult) => void;
 }) {
@@ -28,11 +30,18 @@ export function RegionEditModal({
   const [error, setError] = useState<string | null>(null);
   const [imageLoadFailed, setImageLoadFailed] = useState(false);
 
-  // Derive the page image path from the extraction-result.json path
+  // Derive the page image path from the extraction dir + pages[] metadata.
+  // Using pages[].imagePath (the filename part) avoids hard-coding the naming convention.
   const extractionDir = extractionPath?.replace(/[/\\]extraction-result\.json$/i, "") ?? null;
-  const pageNum = String(candidate.page).padStart(3, "0");
   const sep = extractionDir?.includes("\\") ? "\\" : "/";
-  const pageImagePath = extractionDir ? `${extractionDir}${sep}page-${pageNum}.png` : null;
+  const pageRecord = pages.find((p) => p.page === candidate.page);
+  const pageImagePath = (() => {
+    if (!extractionDir || !pageRecord) return null;
+    // imagePath is relative (e.g. "content/extractions/id/page-001.png"); use only the filename.
+    const parts = pageRecord.imagePath.split("/");
+    const filename = parts[parts.length - 1] ?? pageRecord.imagePath;
+    return `${extractionDir}${sep}${filename}`;
+  })();
   const pageImageUrl = pageImagePath ? convertFileSrc(pageImagePath) : null;
 
   async function handleConfirm() {

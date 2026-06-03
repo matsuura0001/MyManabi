@@ -53,6 +53,56 @@ public class IntegrationOcrTests
     }
 
     [Fact]
+    public void RunRegion_ThrowsOnInvalidRegion_XPlusWidthExceedsOne()
+    {
+        // The region guard fires before any image loading, so no Tesseract needed.
+        string root = Path.Combine(Path.GetTempPath(), "mymanabi-validate-" + Guid.NewGuid().ToString("N"));
+        SetupMinimalSourceDocument(root, "doc1");
+        var opts = CliOptions.Parse(new[]
+        {
+            "--source-document", "doc1", "--data-dir", root,
+            "--candidate-id", "doc1-p001-c01", "--page", "1", "--region", "0,0,2,1",
+        })!;
+        Assert.Throws<ArgumentOutOfRangeException>(() => Worker.RunRegion(opts));
+        try { Directory.Delete(root, recursive: true); } catch { /* best effort */ }
+    }
+
+    [Fact]
+    public void RunRegion_ThrowsOnInvalidRegion_ZeroHeight()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "mymanabi-validate-" + Guid.NewGuid().ToString("N"));
+        SetupMinimalSourceDocument(root, "doc2");
+        var opts = CliOptions.Parse(new[]
+        {
+            "--source-document", "doc2", "--data-dir", root,
+            "--candidate-id", "doc2-p001-c01", "--page", "1", "--region", "0,0,0.5,0",
+        })!;
+        Assert.Throws<ArgumentOutOfRangeException>(() => Worker.RunRegion(opts));
+        try { Directory.Delete(root, recursive: true); } catch { /* best effort */ }
+    }
+
+    private static void SetupMinimalSourceDocument(string root, string id)
+    {
+        Directory.CreateDirectory(Path.Combine(root, "content", "source-documents"));
+        Directory.CreateDirectory(Path.Combine(root, "sources"));
+        string txtPath = Path.Combine(root, "sources", id + ".txt");
+        File.WriteAllText(txtPath, "sample");
+        var doc = new SourceDocument
+        {
+            Id = id,
+            Kind = "text",
+            OriginalFileName = id + ".txt",
+            StoredPath = "sources/" + id + ".txt",
+            ByteSize = new FileInfo(txtPath).Length,
+            Status = "stored",
+            ExtractionStatus = "pending-review",
+        };
+        File.WriteAllText(
+            Path.Combine(root, "content", "source-documents", id + ".json"),
+            JsonSerializer.Serialize(doc, JsonConfig.Options));
+    }
+
+    [Fact]
     public void EndToEnd_RasterizeOcrSplit()
     {
         if (!Enabled)

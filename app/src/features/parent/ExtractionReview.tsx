@@ -239,6 +239,7 @@ export function ExtractionReview({
         candidate={regionEditCandidate}
         extractionPath={extractionPath}
         sourceDocumentId={sourceDocumentId}
+        pages={result.pages}
         onClose={() => setRegionEditCandidate(null)}
         onUpdated={(updatedResult) => {
           setResult(updatedResult);
@@ -250,6 +251,13 @@ export function ExtractionReview({
               ...current,
               [updated.candidateId]: updated.ocrText,
             }));
+            // Drop the stale promotion form so it regenerates from the new OCR text.
+            // Safe: re-extraction resets reviewStatus to "draft" so the promotion
+            // editor is not visible until the adult re-approves.
+            setPromotionForms((current) => {
+              const { [updated.candidateId]: _dropped, ...rest } = current;
+              return rest;
+            });
           }
         }}
       />

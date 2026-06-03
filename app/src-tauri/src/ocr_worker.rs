@@ -243,6 +243,47 @@ pub fn review_extraction_candidate(
     Ok(result)
 }
 
+/// Validate that a `RegionRatio` is well-formed: all fields finite, x/y ≥ 0,
+/// width/height > 0, and x+width / y+height ≤ 1.
+fn validate_region(region: &RegionRatio) -> Result<(), String> {
+    let RegionRatio { x, y, width, height } = region;
+    if !x.is_finite() || !y.is_finite() || !width.is_finite() || !height.is_finite() {
+        return Err("region fields must be finite".to_owned());
+    }
+    if *x < 0.0 || *y < 0.0 {
+        return Err("region x and y must be ≥ 0".to_owned());
+    }
+    if *width <= 0.0 || *height <= 0.0 {
+        return Err("region width and height must be > 0".to_owned());
+    }
+    if x + width > 1.0 + f64::EPSILON {
+        return Err(format!("region x+width ({}) must be ≤ 1", x + width));
+    }
+    if y + height > 1.0 + f64::EPSILON {
+        return Err(format!("region y+height ({}) must be ≤ 1", y + height));
+    }
+    Ok(())
+}
+
+/// Merge an updated candidate back into the result, preserving fields that survive
+/// region edits (currently `item_label`).
+fn merge_reextracted_candidate(
+    mut result: ExtractionResult,
+    candidate_id: &str,
+    mut updated: CandidateResult,
+) -> Result<ExtractionResult, String> {
+    let pos = result
+        .candidates
+        .iter()
+        .position(|c| c.candidate_id == candidate_id)
+        .ok_or_else(|| format!("candidate not found after re-extraction: {candidate_id}"))?;
+    // item_label was derived from document structure (問1, ①, …), not from the OCR text
+    // of a specific region, so it should survive region edits.
+    updated.item_label = result.candidates[pos].item_label.clone();
+    result.candidates[pos] = updated;
+    Ok(result)
+}
+
 /// Re-run OCR on a user-specified region for one candidate.
 /// The worker emits a single CandidateResult JSON to stdout; this function
 /// merges it into the existing extraction-result.json without touching other candidates.
@@ -252,6 +293,8 @@ pub async fn reextract_candidate_region(
     candidate_id: &str,
     region: &RegionRatio,
 ) -> Result<ExtractionResult, String> {
+    validate_region(region)?;
+
     // Load existing result to get the page number for this candidate
     let mut result = load_extraction_result(data_dir, source_document_id)?;
     let page = result
@@ -302,13 +345,9 @@ pub async fn reextract_candidate_region(
         )
     })?;
 
-    // Merge updated candidate into existing result (keep all others unchanged)
-    let pos = result
-        .candidates
-        .iter()
-        .position(|c| c.candidate_id == candidate_id)
-        .ok_or_else(|| format!("candidate not found after re-extraction: {candidate_id}"))?;
-    result.candidates[pos] = updated;
+    // Merge updated candidate into existing result, preserving item_label and other
+    // fields that survive region edits.
+    result = merge_reextracted_candidate(result, candidate_id, updated)?;
 
     let path = extraction_result_path(data_dir, source_document_id)?;
     let bytes = serde_json::to_vec_pretty(&result)
@@ -406,5 +445,109 @@ mod tests {
             .expect_err("reject path traversal");
 
         assert_eq!(error, "invalid source document id: ../private");
+    }
+
+    // --- validate_region ---
+
+    #[test]
+    fn validate_region_accepts_full_page() {
+        validate_region(&RegionRatio { x: 0.0, y: 0.0, width: 1.0, height: 1.0 })
+            .expect("full-page region should be valid");
+    }
+
+    #[test]
+    fn validate_region_accepts_interior_rect() {
+        validate_region(&RegionRatio { x: 0.1, y: 0.2, width: 0.5, height: 0.4 })
+            .expect("interior region should be valid");
+    }
+
+    #[test]
+    fn validate_region_rejects_out_of_bounds() {
+        let err = validate_region(&RegionRatio { x: 0.5, y: 0.0, width: 0.6, height: 1.0 })
+            .expect_err("x+width > 1 should be rejected");
+        assert!(err.contains("x+width"), "error should mention x+width, got: {err}");
+    }
+
+    #[test]
+    fn validate_region_rejects_zero_width() {
+        let err = validate_region(&RegionRatio { x: 0.0, y: 0.0, width: 0.0, height: 0.5 })
+            .expect_err("zero width should be rejected");
+        assert!(err.contains("width"), "error should mention width, got: {err}");
+    }
+
+    #[test]
+    fn validate_region_rejects_negative_x() {
+        let err = validate_region(&RegionRatio { x: -0.1, y: 0.0, width: 0.5, height: 0.5 })
+            .expect_err("negative x should be rejected");
+        assert!(err.contains('x') || err.contains("≥"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_region_rejects_nan() {
+        let err = validate_region(&RegionRatio { x: f64::NAN, y: 0.0, width: 0.5, height: 0.5 })
+            .expect_err("NaN should be rejected");
+        assert!(err.contains("finite"), "got: {err}");
+    }
+
+    // --- merge_reextracted_candidate ---
+
+    fn minimal_result_with_item_label() -> ExtractionResult {
+        serde_json::from_str(r#"{
+          "sourceDocumentId":"src","engine":"tesseract","engineVersion":"5",
+          "language":"jpn","dpi":300,"generatedAtEpochSeconds":1,"pageCount":1,
+          "pages":[],
+          "candidates":[{
+            "candidateId":"src-p001-c01","page":1,"itemLabel":"問1",
+            "region":{"x":0,"y":0,"width":1,"height":1},
+            "ocrText":"old","confidence":0.8,
+            "suggestedQuestionType":"unknown","reviewStatus":"draft"
+          }],
+          "metrics":{"extractionRoute":"local-ocr","localOcrEngine":"tesseract",
+            "pages":1,"candidateQuestions":1,"aiAssistedRegions":0,
+            "adultCorrections":0,"elapsedMs":1,"estimatedApiCostUsd":0}
+        }"#).expect("parse fixture")
+    }
+
+    #[test]
+    fn merge_reextracted_candidate_preserves_item_label() {
+        let result = minimal_result_with_item_label();
+        let updated = CandidateResult {
+            candidate_id: "src-p001-c01".to_owned(),
+            page: 1,
+            item_label: None, // worker does not set item_label
+            region: RegionRatio { x: 0.1, y: 0.1, width: 0.8, height: 0.8 },
+            region_image_path: None,
+            ocr_text: "new text".to_owned(),
+            confidence: 0.9,
+            suggested_question_type: "unknown".to_owned(),
+            review_status: "draft".to_owned(),
+        };
+
+        let merged = merge_reextracted_candidate(result, "src-p001-c01", updated)
+            .expect("merge should succeed");
+
+        assert_eq!(merged.candidates[0].item_label.as_deref(), Some("問1"),
+            "item_label must be preserved from original candidate");
+        assert_eq!(merged.candidates[0].ocr_text, "new text",
+            "ocr_text must be updated from the re-extraction");
+    }
+
+    #[test]
+    fn merge_reextracted_candidate_errors_if_not_found() {
+        let result = minimal_result_with_item_label();
+        let updated = CandidateResult {
+            candidate_id: "nonexistent".to_owned(),
+            page: 1,
+            item_label: None,
+            region: RegionRatio::default(),
+            region_image_path: None,
+            ocr_text: String::new(),
+            confidence: 0.0,
+            suggested_question_type: "unknown".to_owned(),
+            review_status: "draft".to_owned(),
+        };
+
+        merge_reextracted_candidate(result, "nonexistent", updated)
+            .expect_err("should error when candidate_id is not in result");
     }
 }

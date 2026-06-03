@@ -202,6 +202,13 @@ public static class Worker
         var region = options.Region!;
         string candidateId = options.CandidateId!;
 
+        if (!double.IsFinite(region.X) || !double.IsFinite(region.Y) ||
+            !double.IsFinite(region.Width) || !double.IsFinite(region.Height) ||
+            region.X < 0 || region.Y < 0 || region.Width <= 0 || region.Height <= 0 ||
+            region.X + region.Width > 1 + 1e-9 || region.Y + region.Height > 1 + 1e-9)
+            throw new ArgumentOutOfRangeException(nameof(region),
+                "region fields must be finite ratios in 0..1 with width/height > 0 and x+w ≤ 1, y+h ≤ 1");
+
         string outputDir = Path.Combine(dataDir, "content", "extractions", document.Id);
         string pagePath = Path.Combine(outputDir, $"page-{page:D3}.png");
 
