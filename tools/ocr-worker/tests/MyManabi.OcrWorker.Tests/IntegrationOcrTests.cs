@@ -17,6 +17,42 @@ public class IntegrationOcrTests
         Environment.GetEnvironmentVariable("MYMANABI_OCR_INTEGRATION") == "1";
 
     [Fact]
+    public void EndToEnd_TextSourceCreatesDraftCandidateWithoutTessdata()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "mymanabi-text-it-" + Guid.NewGuid().ToString("N"));
+        string sources = Path.Combine(root, "sources");
+        string metaDir = Path.Combine(root, "content", "source-documents");
+        Directory.CreateDirectory(sources);
+        Directory.CreateDirectory(metaDir);
+
+        const string id = "text-sample";
+        string textPath = Path.Combine(sources, id + ".txt");
+        File.WriteAllText(textPath, "問1 1 + 2 = ?");
+        var document = new SourceDocument
+        {
+            Id = id,
+            Kind = "text",
+            OriginalFileName = "sample.txt",
+            StoredPath = "sources/" + id + ".txt",
+            ByteSize = new FileInfo(textPath).Length,
+            Status = "stored",
+            ExtractionStatus = "pending-review",
+        };
+        File.WriteAllText(Path.Combine(metaDir, id + ".json"),
+            JsonSerializer.Serialize(document, JsonConfig.Options));
+
+        var options = CliOptions.Parse(new[] { "--source-document", id, "--data-dir", root })!;
+        ExtractionResult result = Worker.Run(options);
+
+        Assert.Equal("plain-text", result.Engine);
+        Assert.Single(result.Candidates);
+        Assert.Equal("draft", result.Candidates[0].ReviewStatus);
+        Assert.True(File.Exists(Path.Combine(root, "content", "extractions", id, "extraction-result.json")));
+
+        try { Directory.Delete(root, recursive: true); } catch { /* best effort cleanup */ }
+    }
+
+    [Fact]
     public void EndToEnd_RasterizeOcrSplit()
     {
         if (!Enabled)

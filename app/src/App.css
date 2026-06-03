@@ -668,6 +668,194 @@ h2 {
   padding: 10px 12px;
 }
 
+.import-success p {
+  margin-bottom: 10px;
+}
+
+.url-import {
+  color: #60716b;
+  margin-top: 14px;
+}
+
+.url-import summary {
+  cursor: pointer;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.import-history-toggle {
+  margin-left: 8px;
+}
+
+.import-history {
+  background: #f7f4ec;
+  border: 1px solid #ded8cc;
+  border-radius: 12px;
+  margin-top: 12px;
+  padding: 12px;
+}
+
+.import-history-title,
+.import-history-item {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.import-history-title strong {
+  color: #42675b;
+}
+
+.import-history-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.import-history-item {
+  background: #fffdf7;
+  border: 1px solid #ded8cc;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.import-history-item.selected {
+  border-color: #6ca592;
+}
+
+.import-history-item div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.import-history-item span,
+.import-history-item small {
+  color: #71807b;
+  font-size: 12px;
+}
+
+.import-history-item small {
+  overflow-wrap: anywhere;
+}
+
+.extraction-review {
+  margin-top: 14px;
+}
+
+.review-counts,
+.extraction-path {
+  font-size: 13px;
+}
+
+.extraction-path code {
+  overflow-wrap: anywhere;
+}
+
+.candidate-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.candidate-card {
+  background: #fffdf7;
+  border: 1px solid #ded8cc;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.candidate-card.adult-approved {
+  border-color: #87b8a7;
+}
+
+.candidate-card.suspended {
+  border-color: #e1bd73;
+}
+
+.candidate-card summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.candidate-card summary span,
+.candidate-card summary em {
+  color: #71807b;
+  font-size: 12px;
+}
+
+.candidate-card summary em {
+  margin-left: auto;
+}
+
+.candidate-card textarea {
+  background: #f7f4ec;
+  border: 1px solid #d8d0c0;
+  border-radius: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  width: 100%;
+}
+
+.candidate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.promotion-hint {
+  color: #71807b;
+  font-size: 13px;
+  margin: 10px 0 0;
+}
+
+.promotion-editor {
+  background: #f7f4ec;
+  border: 1px solid #ded8cc;
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+}
+
+.promotion-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.promotion-editor label {
+  display: grid;
+  gap: 5px;
+}
+
+.promotion-editor label span {
+  color: #53645f;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.promotion-editor input,
+.promotion-editor select,
+.promotion-editor textarea {
+  background: #fffdf7;
+  border: 1px solid #d8d0c0;
+  border-radius: 8px;
+  color: #384943;
+  padding: 9px;
+  width: 100%;
+}
+
+.wide-field {
+  width: 100%;
+}
+
 .import-success {
   background: #e2f1e8;
 }

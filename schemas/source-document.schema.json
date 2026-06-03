@@ -16,9 +16,9 @@
   ],
   "properties": {
     "id": { "type": "string", "minLength": 1 },
-    "kind": { "const": "pdf" },
+    "kind": { "enum": ["pdf", "image", "text"] },
     "originalFileName": { "type": "string", "minLength": 1 },
-    "storedPath": { "type": "string", "pattern": "^sources/[A-Za-z0-9_-]+\\.pdf$" },
+    "storedPath": { "type": "string", "pattern": "^sources/[A-Za-z0-9_-]+\\.(pdf|png|jpg|webp|txt|md)$" },
     "sourceUrl": { "type": ["string", "null"], "format": "uri" },
     "importedAtEpochSeconds": { "type": "integer", "minimum": 0 },
     "byteSize": { "type": "integer", "minimum": 1 },

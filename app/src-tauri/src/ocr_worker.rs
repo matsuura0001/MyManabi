@@ -1,7 +1,7 @@
 //! Drive the C# + Tesseract OCR worker (`tools/ocr-worker`) as a subprocess.
 //!
-//! The worker rasterizes a stored PDF, runs local Japanese OCR, splits each page
-//! into question candidates, and writes
+//! The worker rasterizes a stored PDF or image, runs local Japanese OCR, splits each
+//! page into question candidates, and writes
 //! `<DATA_DIR>/content/extractions/<id>/extraction-result.json` plus page and region
 //! images. This mirrors how [`crate::codex`] drives `codex app-server`: an external
 //! worker as a child process, located via an env override or a conventional path.
@@ -125,7 +125,7 @@ fn worker_command() -> Command {
     Command::new("MyManabi.OcrWorker")
 }
 
-/// Run the OCR worker for one stored `SourceDocument` and return its extraction result.
+/// Run the local extraction worker for one stored `SourceDocument`.
 pub async fn extract_source_document(
     data_dir: &Path,
     source_document_id: &str,
@@ -183,11 +183,152 @@ pub async fn extract_source_document(
         .join("extractions")
         .join(source_document_id)
         .join("extraction-result.json");
-    let bytes = std::fs::read(&result_path).map_err(|error| {
-        format!(
-            "read extraction result {}: {error}",
-            result_path.display()
-        )
-    })?;
+    let bytes = std::fs::read(&result_path)
+        .map_err(|error| format!("read extraction result {}: {error}", result_path.display()))?;
     serde_json::from_slice(&bytes).map_err(|error| format!("parse extraction result: {error}"))
+}
+
+/// Return the local review artifact path so the UI can make DATA_DIR storage visible.
+pub fn extraction_result_path(data_dir: &Path, source_document_id: &str) -> Result<PathBuf, String> {
+    validate_source_document_id(source_document_id)?;
+    Ok(data_dir
+        .join("content")
+        .join("extractions")
+        .join(source_document_id)
+        .join("extraction-result.json"))
+}
+
+/// Reload an existing extraction result for review.
+pub fn load_extraction_result(
+    data_dir: &Path,
+    source_document_id: &str,
+) -> Result<ExtractionResult, String> {
+    let path = extraction_result_path(data_dir, source_document_id)?;
+    let bytes = std::fs::read(&path)
+        .map_err(|error| format!("read extraction result {}: {error}", path.display()))?;
+    serde_json::from_slice(&bytes).map_err(|error| format!("parse extraction result: {error}"))
+}
+
+/// Save one adult review decision. This approves the OCR candidate as reviewed
+/// source material; it does not create a presentable Question without an answer
+/// and learning metadata.
+pub fn review_extraction_candidate(
+    data_dir: &Path,
+    source_document_id: &str,
+    candidate_id: &str,
+    ocr_text: &str,
+    review_status: &str,
+) -> Result<ExtractionResult, String> {
+    if !matches!(review_status, "draft" | "adult-approved" | "suspended") {
+        return Err(format!("unsupported candidate review status: {review_status}"));
+    }
+    if review_status == "adult-approved" && ocr_text.trim().is_empty() {
+        return Err("approved candidate text must not be empty".to_owned());
+    }
+
+    let mut result = load_extraction_result(data_dir, source_document_id)?;
+    let candidate = result
+        .candidates
+        .iter_mut()
+        .find(|candidate| candidate.candidate_id == candidate_id)
+        .ok_or_else(|| format!("candidate not found: {candidate_id}"))?;
+    candidate.ocr_text = ocr_text.to_owned();
+    candidate.review_status = review_status.to_owned();
+
+    let path = extraction_result_path(data_dir, source_document_id)?;
+    let bytes = serde_json::to_vec_pretty(&result)
+        .map_err(|error| format!("serialize extraction result: {error}"))?;
+    std::fs::write(&path, bytes)
+        .map_err(|error| format!("write extraction result {}: {error}", path.display()))?;
+    Ok(result)
+}
+
+fn validate_source_document_id(source_document_id: &str) -> Result<(), String> {
+    if !source_document_id.is_empty()
+        && source_document_id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Ok(());
+    }
+
+    Err(format!(
+        "invalid source document id: {source_document_id}"
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_data_dir() -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("mymanabi-extraction-review-{nonce}"))
+    }
+
+    #[test]
+    fn saves_adult_review_for_candidate() {
+        let data_dir = temp_data_dir();
+        let result_path = extraction_result_path(&data_dir, "source-1").expect("result path");
+        std::fs::create_dir_all(result_path.parent().expect("result parent"))
+            .expect("create result dir");
+        std::fs::write(
+            &result_path,
+            r#"{
+              "sourceDocumentId":"source-1",
+              "engine":"tesseract",
+              "engineVersion":"5",
+              "language":"jpn",
+              "dpi":300,
+              "generatedAtEpochSeconds":1,
+              "pageCount":1,
+              "pages":[],
+              "candidates":[{
+                "candidateId":"source-1-p001-c01",
+                "page":1,
+                "region":{"x":0,"y":0,"width":1,"height":1},
+                "ocrText":"before",
+                "confidence":0.8,
+                "suggestedQuestionType":"unknown",
+                "reviewStatus":"draft"
+              }],
+              "metrics":{
+                "extractionRoute":"local-ocr",
+                "localOcrEngine":"tesseract",
+                "pages":1,
+                "candidateQuestions":1,
+                "aiAssistedRegions":0,
+                "adultCorrections":0,
+                "elapsedMs":1,
+                "estimatedApiCostUsd":0
+              }
+            }"#,
+        )
+        .expect("write extraction result");
+
+        let updated = review_extraction_candidate(
+            &data_dir,
+            "source-1",
+            "source-1-p001-c01",
+            "after",
+            "adult-approved",
+        )
+        .expect("save review");
+
+        assert_eq!(updated.candidates[0].ocr_text, "after");
+        assert_eq!(updated.candidates[0].review_status, "adult-approved");
+        std::fs::remove_dir_all(data_dir).expect("remove temp data dir");
+    }
+
+    #[test]
+    fn rejects_source_document_path_traversal() {
+        let error = extraction_result_path(Path::new("data"), "../private")
+            .expect_err("reject path traversal");
+
+        assert_eq!(error, "invalid source document id: ../private");
+    }
 }

@@ -301,18 +301,22 @@ AI へ PDF 全体を常に送信しない。問題候補を作るために必要
 初期実装では、次の段階を分離する。
 
 ```text
-Stage 0: PDF 保存と SourceDocument 登録
-Stage 1: ローカルページ画像化
-Stage 2: ローカル OCR と候補分割
+Stage 0: PDF・画像・テキスト保存と SourceDocument 登録
+Stage 1: PDF・画像のローカルページ画像化
+Stage 2: ローカル OCR またはテキスト読み込みと候補分割
 Stage 3: 保護者による確認、修正
 Stage 4: 任意の AI 補助
 ```
 
 Stage 0 は本体（Rust）が担う。Stage 1–2 は C# + Tesseract のローカル OCR ワーカー
 （[`tools/ocr-worker`](../../tools/ocr-worker)）として実装済みで、保存済み PDF を PDFium で
-ページ画像化し、Tesseract で日本語 OCR を行い、問題番号マーカーで候補へ分割する。出力は
-確認用の中間成果物（`extraction-result.json`、すべて `reviewStatus: draft`）で、Stage 3 の
-確認を経るまで出題しない。
+ページ画像化し、画像も含めて Tesseract で日本語 OCR を行い、問題番号マーカーで候補へ分割する。
+UTF-8 テキストは OCR を通さず draft 候補にする。出力は
+確認用の中間成果物（`extraction-result.json`、初期値 `reviewStatus: draft`）で、Stage 3 の
+確認時に OCR 本文を修正し、候補を `adult-approved` または `suspended` にできる。
+ただし、この承認は OCR 候補の確認であり、答えと単元を設定して Question JSON にするまでは出題しない。
+初期 UI では、承認済み候補だけを対象に、教科、単元 ID、Skill ID、問題種別、答えを入力して
+`<DATA_DIR>/content/questions/*.json` へ昇格する。
 
 AI 補助は既定でオフにする。利用者が有効化した場合も、次の順序で利用する。
 

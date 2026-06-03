@@ -8,7 +8,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const MAX_PDF_BYTES: usize = 25 * 1024 * 1024;
+const MAX_SOURCE_BYTES: usize = 25 * 1024 * 1024;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,9 +48,9 @@ pub async fn import_pdf_from_url(data_dir: &Path, url: &str) -> Result<SourceDoc
     validate_public_https_url(response.url())?;
     if response
         .content_length()
-        .is_some_and(|length| length > MAX_PDF_BYTES as u64)
+        .is_some_and(|length| length > MAX_SOURCE_BYTES as u64)
     {
-        return Err(format!("PDF exceeds {} bytes", MAX_PDF_BYTES));
+        return Err(format!("PDF exceeds {} bytes", MAX_SOURCE_BYTES));
     }
 
     let final_url = response.url().to_string();
@@ -75,12 +75,59 @@ pub fn store_pdf(
     source_url: Option<String>,
     bytes: &[u8],
 ) -> Result<SourceDocument, String> {
-    if bytes.len() > MAX_PDF_BYTES {
-        return Err(format!("PDF exceeds {} bytes", MAX_PDF_BYTES));
+    store_source(data_dir, original_file_name, source_url, bytes)
+}
+
+pub fn import_source_from_path(data_dir: &Path, path: &Path) -> Result<SourceDocument, String> {
+    let original_file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "selected source file has no UTF-8 file name".to_owned())?;
+    let bytes = fs::read(path).map_err(|error| format!("read selected source file: {error}"))?;
+    store_source(data_dir, original_file_name, None, &bytes)
+}
+
+pub fn list_source_documents(data_dir: &Path) -> Result<Vec<SourceDocument>, String> {
+    let metadata_dir = data_dir.join("content").join("source-documents");
+    let entries = match fs::read_dir(&metadata_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            return Err(format!(
+                "read source documents {}: {error}",
+                metadata_dir.display()
+            ));
+        }
+    };
+    let mut documents = Vec::new();
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+            continue;
+        }
+        let bytes = fs::read(&path)
+            .map_err(|error| format!("read source document {}: {error}", path.display()))?;
+        let document: SourceDocument = serde_json::from_slice(&bytes)
+            .map_err(|error| format!("parse source document {}: {error}", path.display()))?;
+        documents.push(document);
     }
-    if !bytes.starts_with(b"%PDF-") {
-        return Err("downloaded file is not a PDF".to_owned());
+    documents.sort_by_key(|document| std::cmp::Reverse(document.imported_at_epoch_seconds));
+    Ok(documents)
+}
+
+pub fn store_source(
+    data_dir: &Path,
+    original_file_name: &str,
+    source_url: Option<String>,
+    bytes: &[u8],
+) -> Result<SourceDocument, String> {
+    if bytes.is_empty() {
+        return Err("source file is empty".to_owned());
     }
+    if bytes.len() > MAX_SOURCE_BYTES {
+        return Err(format!("source file exceeds {} bytes", MAX_SOURCE_BYTES));
+    }
+    let (kind, extension) = validate_source(original_file_name, bytes)?;
 
     let imported_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -88,10 +135,10 @@ pub fn store_pdf(
     let imported_at_epoch_seconds = imported_at.as_secs();
     let stem = sanitize_stem(original_file_name);
     let id = format!("{stem}-{}", imported_at.as_millis());
-    let stored_path = format!("sources/{id}.pdf");
+    let stored_path = format!("sources/{id}.{extension}");
     let document = SourceDocument {
         id: id.clone(),
-        kind: "pdf".to_owned(),
+        kind: kind.to_owned(),
         original_file_name: original_file_name.to_owned(),
         stored_path: stored_path.clone(),
         source_url,
@@ -118,7 +165,7 @@ pub fn store_pdf(
             .ok_or_else(|| "metadata path has no parent".to_owned())?,
     )
     .map_err(|error| format!("create metadata directory: {error}"))?;
-    fs::write(&source_path, bytes).map_err(|error| format!("store PDF: {error}"))?;
+    fs::write(&source_path, bytes).map_err(|error| format!("store source file: {error}"))?;
     fs::write(
         &metadata_path,
         serde_json::to_vec_pretty(&document)
@@ -127,6 +174,61 @@ pub fn store_pdf(
     .map_err(|error| format!("store source document metadata: {error}"))?;
 
     Ok(document)
+}
+
+fn validate_source(file_name: &str, bytes: &[u8]) -> Result<(&'static str, &'static str), String> {
+    let extension = Path::new(file_name)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .ok_or_else(|| "source file must have an extension".to_owned())?;
+
+    match extension.as_str() {
+        "pdf" if bytes.starts_with(b"%PDF-") => Ok(("pdf", "pdf")),
+        "png" if bytes.starts_with(b"\x89PNG\r\n\x1a\n") => Ok(("image", "png")),
+        "jpg" | "jpeg" if bytes.starts_with(b"\xff\xd8\xff") => Ok(("image", "jpg")),
+        "webp" if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" => {
+            Ok(("image", "webp"))
+        }
+        "txt" | "md" if std::str::from_utf8(bytes).is_ok() => {
+            Ok(("text", extension_label(&extension)))
+        }
+        "pdf" => Err("selected file is not a PDF".to_owned()),
+        "png" | "jpg" | "jpeg" | "webp" => Err("selected file is not a supported image".to_owned()),
+        "txt" | "md" => Err("text source must use UTF-8".to_owned()),
+        _ => Err("supported source types: PDF, PNG, JPEG, WebP, TXT, Markdown".to_owned()),
+    }
+}
+
+fn extension_label(extension: &str) -> &'static str {
+    if extension == "md" {
+        "md"
+    } else {
+        "txt"
+    }
+}
+
+fn sanitize_stem(file_name: &str) -> String {
+    let stem = Path::new(file_name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(file_name);
+    let sanitized = stem
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    let sanitized = sanitized.trim_matches('-');
+    if sanitized.is_empty() {
+        "imported-source".to_owned()
+    } else {
+        sanitized.to_owned()
+    }
 }
 
 fn validate_public_https_url(url: &reqwest::Url) -> Result<(), String> {
@@ -160,29 +262,6 @@ fn validate_public_https_url(url: &reqwest::Url) -> Result<(), String> {
             Err("PDF URL must use a public host".to_owned())
         }
         _ => Ok(()),
-    }
-}
-
-fn sanitize_stem(file_name: &str) -> String {
-    let stem = file_name
-        .strip_suffix(".pdf")
-        .or_else(|| file_name.strip_suffix(".PDF"))
-        .unwrap_or(file_name);
-    let sanitized = stem
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
-                character
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>();
-    let sanitized = sanitized.trim_matches('-');
-    if sanitized.is_empty() {
-        "imported-pdf".to_owned()
-    } else {
-        sanitized.to_owned()
     }
 }
 
@@ -226,7 +305,47 @@ mod tests {
         let error = store_pdf(&temp_data_dir(), "fake.pdf", None, b"not a PDF")
             .expect_err("reject non-PDF file");
 
-        assert_eq!(error, "downloaded file is not a PDF");
+        assert_eq!(error, "selected file is not a PDF");
+    }
+
+    #[test]
+    fn stores_utf8_text_source() {
+        let data_dir = temp_data_dir();
+        let document = store_source(&data_dir, "notes.md", None, "問1 たし算".as_bytes())
+            .expect("store UTF-8 text");
+
+        assert_eq!(document.kind, "text");
+        assert!(document.stored_path.ends_with(".md"));
+        fs::remove_dir_all(data_dir).expect("remove temp DATA_DIR");
+    }
+
+    #[test]
+    fn stores_png_image_source() {
+        let data_dir = temp_data_dir();
+        let document = store_source(&data_dir, "worksheet.png", None, b"\x89PNG\r\n\x1a\nsynthetic")
+            .expect("store PNG image");
+
+        assert_eq!(document.kind, "image");
+        assert!(document.stored_path.ends_with(".png"));
+        fs::remove_dir_all(data_dir).expect("remove temp DATA_DIR");
+    }
+
+    #[test]
+    fn lists_source_documents_newest_first() {
+        let data_dir = temp_data_dir();
+        store_source(&data_dir, "first.txt", None, b"first").expect("store first");
+        store_source(&data_dir, "second.txt", None, b"second").expect("store second");
+
+        let documents = list_source_documents(&data_dir).expect("list source documents");
+
+        assert_eq!(documents.len(), 2);
+        assert!(documents
+            .iter()
+            .any(|document| document.original_file_name == "first.txt"));
+        assert!(documents
+            .iter()
+            .any(|document| document.original_file_name == "second.txt"));
+        fs::remove_dir_all(data_dir).expect("remove temp DATA_DIR");
     }
 
     #[test]

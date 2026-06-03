@@ -21,6 +21,7 @@ pub struct Question {
     pub source: Source,
     pub review_status: String,
     pub purposes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assessment: Option<Assessment>,
 }
 
@@ -35,9 +36,13 @@ pub struct Answer {
 #[serde(rename_all = "camelCase")]
 pub struct Source {
     pub r#type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item_label: Option<String>,
 }
 
@@ -113,6 +118,23 @@ pub fn load_approved_questions_by_ids(
     Ok(questions)
 }
 
+pub fn save_approved_question(data_dir: &Path, question: &Question) -> Result<Question, String> {
+    validate_question(question)?;
+
+    let questions_dir = data_dir.join("content").join("questions");
+    fs::create_dir_all(&questions_dir)
+        .map_err(|error| format!("create question bank {}: {error}", questions_dir.display()))?;
+    let path = questions_dir.join(format!("{}.json", question.id));
+    if path.exists() {
+        return Err(format!("question already exists: {}", question.id));
+    }
+
+    let bytes = serde_json::to_vec_pretty(question)
+        .map_err(|error| format!("serialize question {}: {error}", question.id))?;
+    fs::write(&path, bytes).map_err(|error| format!("write question {}: {error}", path.display()))?;
+    Ok(question.clone())
+}
+
 fn is_presentable(question: &Question) -> bool {
     matches!(
         question.review_status.as_str(),
@@ -120,7 +142,7 @@ fn is_presentable(question: &Question) -> bool {
     )
 }
 
-fn validate_question_id(question_id: &str) -> Result<(), String> {
+pub fn validate_question_id(question_id: &str) -> Result<(), String> {
     if !question_id.is_empty()
         && question_id
             .chars()
@@ -130,6 +152,49 @@ fn validate_question_id(question_id: &str) -> Result<(), String> {
     }
 
     Err(format!("invalid question id: {question_id}"))
+}
+
+fn validate_question(question: &Question) -> Result<(), String> {
+    validate_question_id(&question.id)?;
+    if question.subject.trim().is_empty() {
+        return Err("question subject must not be empty".to_owned());
+    }
+    if question.unit_id.trim().is_empty() {
+        return Err("question unitId must not be empty".to_owned());
+    }
+    if question.skill_ids.is_empty() || question.skill_ids.iter().any(|skill| skill.trim().is_empty()) {
+        return Err("question skillIds must not be empty".to_owned());
+    }
+    if !matches!(
+        question.question_type.as_str(),
+        "numeric" | "kanji" | "multiple-choice" | "word-problem" | "free-text" | "handwriting" | "speech"
+    ) {
+        return Err(format!("unsupported question type: {}", question.question_type));
+    }
+    if question.title.trim().is_empty() {
+        return Err("question title must not be empty".to_owned());
+    }
+    if question.body.trim().is_empty() {
+        return Err("question body must not be empty".to_owned());
+    }
+    if question.answer.value.trim().is_empty() {
+        return Err("question answer must not be empty".to_owned());
+    }
+    if question.review_status != "adult-approved" {
+        return Err("promoted question must be adult-approved".to_owned());
+    }
+    if question.purposes.is_empty() {
+        return Err("question purposes must not be empty".to_owned());
+    }
+    if question.purposes.iter().any(|purpose| {
+        !matches!(
+            purpose.as_str(),
+            "learning" | "review" | "assessment"
+        )
+    }) {
+        return Err("question purposes include an unsupported value".to_owned());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -232,5 +297,47 @@ mod tests {
             .expect_err("path traversal should be rejected");
 
         assert_eq!(error, "invalid question id: ../private");
+    }
+
+    #[test]
+    fn saves_approved_question_without_null_optional_fields() {
+        let data_dir = temp_data_dir();
+        let question = Question {
+            id: "imported-q-1".to_owned(),
+            subject: "国語".to_owned(),
+            unit_id: "kanji".to_owned(),
+            skill_ids: vec!["kanji-writing".to_owned()],
+            question_type: "kanji".to_owned(),
+            title: "漢字を書こう".to_owned(),
+            body: "山".to_owned(),
+            note: "".to_owned(),
+            answer: Answer {
+                r#type: "exact-text".to_owned(),
+                value: "山".to_owned(),
+            },
+            source: Source {
+                r#type: "imported".to_owned(),
+                template_id: None,
+                document_id: Some("source-1".to_owned()),
+                page: Some(1),
+                item_label: None,
+            },
+            review_status: "adult-approved".to_owned(),
+            purposes: vec!["learning".to_owned()],
+            assessment: None,
+        };
+
+        save_approved_question(&data_dir, &question).expect("save approved question");
+        let text = fs::read_to_string(
+            data_dir
+                .join("content")
+                .join("questions")
+                .join("imported-q-1.json"),
+        )
+        .expect("read saved question");
+
+        assert!(!text.contains(": null"));
+        assert!(text.contains("\"reviewStatus\": \"adult-approved\""));
+        fs::remove_dir_all(data_dir).expect("remove temp data dir");
     }
 }

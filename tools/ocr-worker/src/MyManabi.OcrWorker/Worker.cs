@@ -5,8 +5,8 @@ using System.Text.Json;
 namespace MyManabi.OcrWorker;
 
 /// <summary>
-/// Orchestrates one import: resolve the PDF, rasterize each page, OCR it, split into
-/// candidates, write page/region images and an extraction-result.json under DATA_DIR.
+/// Orchestrates one import: resolve the source, rasterize PDF/image pages or read
+/// UTF-8 text, split into candidates, and write an extraction-result.json under DATA_DIR.
 /// </summary>
 public static class Worker
 {
@@ -15,13 +15,16 @@ public static class Worker
         var stopwatch = Stopwatch.StartNew();
 
         string dataDir = options.DataDir is null ? DataDir.Resolve() : Path.GetFullPath(options.DataDir);
-        var (document, pdfPath) = ResolveSource(options, dataDir);
+        var (document, sourcePath) = ResolveSource(options, dataDir);
+
+        if (document.Kind == "text")
+            return RunText(document, sourcePath, dataDir, stopwatch);
 
         string tessdata = TessdataResolver.Resolve(options.Tessdata, dataDir);
         string language = TessdataResolver.ResolveLanguage(tessdata, options.Language);
 
         Console.Error.WriteLine($"data-dir : {dataDir}");
-        Console.Error.WriteLine($"pdf      : {pdfPath}");
+        Console.Error.WriteLine($"source   : {sourcePath}");
         Console.Error.WriteLine($"tessdata : {tessdata} (lang={language})");
 
         string relativeDir = $"content/extractions/{document.Id}";
@@ -32,7 +35,7 @@ public static class Worker
         var pages = new List<PageResult>();
         var candidates = new List<CandidateResult>();
 
-        foreach (var (index, bitmap) in PdfRasterizer.RenderPages(pdfPath, options.Dpi, options.Password, options.MaxPages))
+        foreach (var (index, bitmap) in RenderPages(document, sourcePath, options))
         {
             using (bitmap)
             {
@@ -107,14 +110,84 @@ public static class Worker
             },
         };
 
-        string json = JsonSerializer.Serialize(result, JsonConfig.Options);
-        File.WriteAllText(Path.Combine(outputDir, "extraction-result.json"), json, new UTF8Encoding(false));
-        Console.Error.WriteLine($"wrote {pages.Count} page(s), {candidates.Count} candidate(s) -> {relativeDir}/extraction-result.json");
-
+        WriteResult(outputDir, relativeDir, result);
         return result;
     }
 
-    private static (SourceDocument Document, string PdfPath) ResolveSource(CliOptions options, string dataDir)
+    private static ExtractionResult RunText(
+        SourceDocument document, string sourcePath, string dataDir, Stopwatch stopwatch)
+    {
+        Console.Error.WriteLine($"data-dir : {dataDir}");
+        Console.Error.WriteLine($"source   : {sourcePath}");
+        string text = File.ReadAllText(sourcePath, Encoding.UTF8);
+        string relativeDir = $"content/extractions/{document.Id}";
+        string outputDir = Path.Combine(dataDir, "content", "extractions", document.Id);
+        Directory.CreateDirectory(outputDir);
+
+        var candidates = new List<CandidateResult>();
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            candidates.Add(new CandidateResult
+            {
+                CandidateId = $"{document.Id}-text-c01",
+                Page = 1,
+                Region = new RegionRatio { X = 0, Y = 0, Width = 1, Height = 1 },
+                OcrText = text,
+                Confidence = 1,
+                SuggestedQuestionType = QuestionTypeHeuristic.Suggest(text),
+                ReviewStatus = "draft",
+            });
+        }
+
+        var result = new ExtractionResult
+        {
+            SourceDocumentId = document.Id,
+            Engine = "plain-text",
+            EngineVersion = "",
+            Language = "und",
+            Dpi = 1,
+            GeneratedAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            PageCount = 0,
+            Candidates = candidates,
+            Metrics = new ImportMetrics
+            {
+                ExtractionRoute = "plain-text",
+                LocalOcrEngine = "none",
+                CandidateQuestions = candidates.Count,
+                ElapsedMs = stopwatch.ElapsedMilliseconds,
+            },
+        };
+        WriteResult(outputDir, relativeDir, result);
+        return result;
+    }
+
+    private static IEnumerable<(int Index, SkiaSharp.SKBitmap Bitmap)> RenderPages(
+        SourceDocument document, string sourcePath, CliOptions options)
+    {
+        if (document.Kind == "pdf")
+            return PdfRasterizer.RenderPages(sourcePath, options.Dpi, options.Password, options.MaxPages);
+
+        if (document.Kind == "image")
+            return RenderImage(sourcePath);
+
+        throw new InvalidOperationException($"OCR is not supported for source kind: {document.Kind}");
+    }
+
+    private static IEnumerable<(int Index, SkiaSharp.SKBitmap Bitmap)> RenderImage(string sourcePath)
+    {
+        SkiaSharp.SKBitmap bitmap = SkiaSharp.SKBitmap.Decode(sourcePath)
+            ?? throw new InvalidOperationException($"could not decode image: {sourcePath}");
+        yield return (0, bitmap);
+    }
+
+    private static void WriteResult(string outputDir, string relativeDir, ExtractionResult result)
+    {
+        string json = JsonSerializer.Serialize(result, JsonConfig.Options);
+        File.WriteAllText(Path.Combine(outputDir, "extraction-result.json"), json, new UTF8Encoding(false));
+        Console.Error.WriteLine($"wrote {result.PageCount} page(s), {result.Candidates.Count} candidate(s) -> {relativeDir}/extraction-result.json");
+    }
+
+    private static (SourceDocument Document, string SourcePath) ResolveSource(CliOptions options, string dataDir)
     {
         if (options.SourceDocumentId is not null)
         {
@@ -125,11 +198,11 @@ public static class Worker
             var document = JsonSerializer.Deserialize<SourceDocument>(File.ReadAllText(metaPath), JsonConfig.ReadOptions)
                 ?? throw new InvalidOperationException($"could not parse {metaPath}");
 
-            string pdfPath = Path.Combine(dataDir, document.StoredPath.Replace('/', Path.DirectorySeparatorChar));
-            if (!File.Exists(pdfPath))
-                throw new FileNotFoundException($"stored PDF not found: {pdfPath}");
+            string sourcePath = Path.Combine(dataDir, document.StoredPath.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(sourcePath))
+                throw new FileNotFoundException($"stored source file not found: {sourcePath}");
 
-            return (document, pdfPath);
+            return (document, sourcePath);
         }
 
         string path = Path.GetFullPath(options.PdfPath!);

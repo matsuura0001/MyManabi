@@ -1,18 +1,20 @@
 # MyManabi OCR ワーカー（C# + Tesseract）
 
-PDF 問題集を取り込むための**ローカル OCR ワーカー**。保存済み PDF をページ画像化し、
+教材を取り込むための**ローカル OCR ワーカー**。保存済み PDF または画像をページ画像化し、
 日本語 OCR を行い、問題番号マーカーで**問題候補**へ分割して、確認用の抽出結果 JSON を
 出力する。これは教材取り込み仕様（[`docs/spec/content-import.md`](../../docs/spec/content-import.md)）の
 **Stage 1–2（ローカルページ画像化＋ローカル OCR と候補分割）**に当たる。
+UTF-8 テキストは OCR を通さず、そのまま draft 候補にする。
 
 設計上の位置づけ:
 
-- Rust + Tauri 本体は **Stage 0**（PDF を DATA_DIR へ保存し SourceDocument を登録）を担う
+- Rust + Tauri 本体は **Stage 0**（教材を DATA_DIR へ保存し SourceDocument を登録）を担う
   （[`app/src-tauri/src/source_document.rs`](../../app/src-tauri/src/source_document.rs)）。
 - 本ワーカーはその SourceDocument を入力に取り、**子プロセス**として駆動される
   （codex app-server と同じ「外部ワーカーを子プロセスで駆動」パターン）。
-- 出力は**確定 Question ではなく、確認用の中間成果物**。すべて `reviewStatus: "draft"` で、
-  大人が確認するまで出題対象にしない（仕様 §11.3 / §12）。
+- 出力は**確定 Question ではなく、確認用の中間成果物**。初期値は `reviewStatus: "draft"` で、
+  大人が OCR 候補を確認すると `adult-approved` または `suspended` になる。答えと単元を設定して
+  Question JSON にするまでは出題対象にしない（仕様 §11.3 / §12）。
 
 ```text
 SourceDocument(PDF)                       本ワーカー（C#+Tesseract）
@@ -125,7 +127,7 @@ cargo run --example extract_pdf -- <SOURCE_DOCUMENT_ID>
 ## 設計メモ
 
 - **OCR は提案であって確定ではない。** 候補分割・種別推定は経験則で、誤読・誤分割を前提に
-  人の確認へ渡す。`reviewStatus` は常に `draft`。
+  人の確認へ渡す。ワーカー出力時の `reviewStatus` は常に `draft`。
 - **候補分割**は行頭の問題番号マーカー（`問1` / `大問1` / `第1問` / `(1)` / `１．` / `①` …）を
   検出して行をまとめる。マーカーが無いページは 1 ページ＝1 候補（`source-page` 相当）。
 - **純粋ロジック**（[`CandidateSplitter`](src/MyManabi.OcrWorker/CandidateSplitter.cs) /

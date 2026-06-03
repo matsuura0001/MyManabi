@@ -1,0 +1,293 @@
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+import type { SourceDocument } from "../../domain/sourceDocument";
+import type { ExtractionResult } from "../../domain/extraction";
+import type { Variant, View } from "../../lib/variant";
+import { Header } from "../../components/Header";
+import { SummaryCard } from "../../components/SummaryCard";
+import { ImportHistory } from "./ImportHistory";
+import { ExtractionReview } from "./ExtractionReview";
+
+export function ParentConsole({
+  variant,
+  setView,
+}: {
+  variant: Variant;
+  setView: (view: View) => void;
+}) {
+  const [suggestion, setSuggestion] = useState("分数のたし算 / 通分を含む問題");
+  const [sent, setSent] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState("");
+  const [importedDocument, setImportedDocument] = useState<SourceDocument | null>(null);
+  const [sourceDocuments, setSourceDocuments] = useState<SourceDocument[]>([]);
+  const [showImportHistory, setShowImportHistory] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
+  const [extractionPath, setExtractionPath] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const isSidebar = variant === "B";
+
+  useEffect(() => {
+    loadSourceDocuments();
+  }, []);
+
+  async function loadSourceDocuments() {
+    try {
+      setSourceDocuments(await invoke<SourceDocument[]>("list_source_documents"));
+    } catch {
+      // Browser-only preview does not expose Tauri commands.
+    }
+  }
+
+  function resetImportState() {
+    setImportedDocument(null);
+    setExtractionResult(null);
+    setExtractionPath(null);
+  }
+
+  async function importPdf() {
+    setImporting(true);
+    setImportError(null);
+    resetImportState();
+    try {
+      setImportedDocument(await invoke<SourceDocument>("import_pdf_from_url", { url: pdfUrl }));
+      await loadSourceDocuments();
+    } catch (caught) {
+      setImportError(String(caught));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function selectAndImportSource() {
+    const path = await open({
+      multiple: false,
+      directory: false,
+      filters: [
+        {
+          name: "教材ファイル",
+          extensions: ["pdf", "png", "jpg", "jpeg", "webp", "txt", "md"],
+        },
+      ],
+    });
+    if (!path) return;
+
+    setImporting(true);
+    setImportError(null);
+    resetImportState();
+    try {
+      setImportedDocument(await invoke<SourceDocument>("import_source_from_path", { path }));
+      await loadSourceDocuments();
+    } catch (caught) {
+      setImportError(String(caught));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function extractImportedSource() {
+    if (!importedDocument) return;
+
+    setExtracting(true);
+    setImportError(null);
+    setExtractionResult(null);
+    setExtractionPath(null);
+    try {
+      const result = await invoke<ExtractionResult>("extract_source_document", {
+        sourceDocumentId: importedDocument.id,
+      });
+      const path = await invoke<string>("extraction_result_path", {
+        sourceDocumentId: importedDocument.id,
+      });
+      setExtractionResult(result);
+      setExtractionPath(path);
+      await loadSourceDocuments();
+    } catch (caught) {
+      setImportError(String(caught));
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  async function openStoredExtraction(document: SourceDocument) {
+    setImportError(null);
+    setImportedDocument(document);
+    setExtracting(false);
+    setExtractionResult(null);
+    setExtractionPath(null);
+    try {
+      const result = await invoke<ExtractionResult>("load_extraction_result", {
+        sourceDocumentId: document.id,
+      });
+      const path = await invoke<string>("extraction_result_path", {
+        sourceDocumentId: document.id,
+      });
+      setExtractionResult(result);
+      setExtractionPath(path);
+    } catch (caught) {
+      setImportError(`保存済みの抽出結果を開けませんでした: ${String(caught)}`);
+    }
+  }
+
+  return (
+    <main className={`app-shell parent-shell ${isSidebar ? "with-sidebar" : ""}`}>
+      <Header view="parent" setView={setView} />
+      {isSidebar && (
+        <aside className="parent-sidebar">
+          <strong>おうちの人</strong>
+          <a className="selected">今日の様子</a>
+          <a>確認問題</a>
+          <a>学習パターン</a>
+          <a>公開用レポート</a>
+        </aside>
+      )}
+      <section className="parent-main">
+        <div className="parent-title">
+          <div>
+            <p className="eyebrow">あおい / 今日の学習</p>
+            <h1>話してみる候補が 2 件あります</h1>
+          </div>
+          <span className="date-chip">2026-06-02</span>
+        </div>
+
+        <div className="summary-row">
+          <SummaryCard label="取り組んだ問題" value="7" unit="問" />
+          <SummaryCard label="正答" value="5" unit="問" />
+          <SummaryCard label="分からない" value="1" unit="件" accent />
+          <SummaryCard label="納得できない" value="1" unit="件" accent />
+        </div>
+
+        <div className="parent-grid">
+          <section className="parent-card attention-card">
+            <p className="eyebrow">今日、話してみる候補</p>
+            <h2>分数のたし算</h2>
+            <ul>
+              <li>通分を含む問題で「分からない」が 1 件ありました。</li>
+              <li>AI の判定へ「納得できない」が 1 件ありました。</li>
+            </ul>
+            <button className="small-button" type="button">
+              確認結果を記録する
+            </button>
+          </section>
+
+          <section className="parent-card suggestion-card">
+            <p className="eyebrow">確認問題を提案する</p>
+            <h2>次に解いてほしい問題</h2>
+            <select
+              value={suggestion}
+              onChange={(event) => setSuggestion(event.currentTarget.value)}
+            >
+              <option>分数のたし算 / 通分を含む問題</option>
+              <option>分数のたし算 / 同分母の問題</option>
+              <option>前回「分からない」だった問題</option>
+            </select>
+            <button className="small-button" type="button" onClick={() => setSent(true)}>
+              1 問だけ提案する
+            </button>
+            {sent && <small>次の学習時に表示します。</small>}
+          </section>
+        </div>
+
+        <section className="parent-card pattern-card">
+          <div>
+            <p className="eyebrow">現在の学習パターン</p>
+            <h2>教科書順 + 復習を少し混ぜる</h2>
+            <p>基準線と比較できるよう、選定理由と結果を記録しています。</p>
+          </div>
+          <button className="outline-button" type="button">
+            パターンを確認
+          </button>
+        </section>
+
+        <section className="parent-card report-card">
+          <p className="eyebrow">公開用統計</p>
+          <h2>個別回答を含まない集計レポート</h2>
+          <p>
+            分野、学習パターン、評価条件、正答率などを確認してから、任意で共有できます。
+          </p>
+          <button className="outline-button" type="button">
+            プレビュー
+          </button>
+        </section>
+
+        <section className="parent-card import-card">
+          <p className="eyebrow">教材を取り込む</p>
+          <h2>教材ファイルを登録</h2>
+          <p>
+            PDF、画像、テキストを端末内の DATA_DIR に保存します。登録後にローカル処理で問題候補を作成し、内容を確認します。
+          </p>
+          <button
+            className="small-button"
+            disabled={importing || extracting}
+            type="button"
+            onClick={selectAndImportSource}
+          >
+            {importing ? "登録中..." : "ファイルを選択"}
+          </button>
+          <button
+            className="secondary-button import-history-toggle"
+            type="button"
+            onClick={() => setShowImportHistory((value) => !value)}
+          >
+            {showImportHistory ? "取り込み履歴を閉じる" : "取り込み履歴 / 結果を見る"}
+          </button>
+          {showImportHistory && (
+            <ImportHistory
+              documents={sourceDocuments}
+              openStoredExtraction={openStoredExtraction}
+              refresh={loadSourceDocuments}
+              selectedDocumentId={importedDocument?.id ?? null}
+            />
+          )}
+          <details className="url-import">
+            <summary>公開 URL の PDF を登録</summary>
+            <div className="import-row">
+              <input
+                aria-label="PDF の URL"
+                placeholder="https://.../worksheet.pdf"
+                type="url"
+                value={pdfUrl}
+                onChange={(event) => setPdfUrl(event.currentTarget.value)}
+              />
+              <button
+                className="small-button"
+                disabled={importing || pdfUrl.trim() === ""}
+                type="button"
+                onClick={importPdf}
+              >
+                {importing ? "取り込み中..." : "PDF を取り込む"}
+              </button>
+            </div>
+          </details>
+          {importedDocument && (
+            <div className="import-success">
+              <p>
+                {importedDocument.originalFileName} を保存しました。種類: {importedDocument.kind}
+              </p>
+              <button
+                className="small-button"
+                disabled={extracting}
+                type="button"
+                onClick={extractImportedSource}
+              >
+                {extracting ? "候補を抽出中..." : "問題候補を抽出"}
+              </button>
+            </div>
+          )}
+          {importedDocument && extractionResult && (
+            <ExtractionReview
+              key={importedDocument.id}
+              extractionPath={extractionPath}
+              initialResult={extractionResult}
+              setImportError={setImportError}
+              sourceDocumentId={importedDocument.id}
+            />
+          )}
+          {importError && <p className="import-error">取り込めませんでした: {importError}</p>}
+        </section>
+      </section>
+    </main>
+  );
+}

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.invalid/mymanabi/extraction-result.schema.json",
   "title": "MyManabi extraction result",
-  "description": "Output of the local OCR worker (tools/ocr-worker). An intermediate review artifact, not a final Question. Stored under <DATA_DIR>/content/extractions/<id>/extraction-result.json and never committed.",
+  "description": "Output of the local source extraction worker (tools/ocr-worker). An intermediate review artifact, not a final Question. Stored under <DATA_DIR>/content/extractions/<id>/extraction-result.json and never committed.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -58,7 +58,7 @@
         "suggestedQuestionType": {
           "enum": ["numeric", "kanji", "multiple-choice", "word-problem", "free-text", "handwriting", "speech", "unknown"]
         },
-        "reviewStatus": { "const": "draft" }
+        "reviewStatus": { "enum": ["draft", "adult-approved", "suspended"] }
       }
     },
     "region": {
