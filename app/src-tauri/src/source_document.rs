@@ -322,8 +322,13 @@ mod tests {
     #[test]
     fn stores_png_image_source() {
         let data_dir = temp_data_dir();
-        let document = store_source(&data_dir, "worksheet.png", None, b"\x89PNG\r\n\x1a\nsynthetic")
-            .expect("store PNG image");
+        let document = store_source(
+            &data_dir,
+            "worksheet.png",
+            None,
+            b"\x89PNG\r\n\x1a\nsynthetic",
+        )
+        .expect("store PNG image");
 
         assert_eq!(document.kind, "image");
         assert!(document.stored_path.ends_with(".png"));

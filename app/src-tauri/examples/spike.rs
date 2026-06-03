@@ -11,7 +11,10 @@ async fn main() {
     let prompt = "小学3年生向けの足し算の問題を1問だけ、答え付きで作ってください。";
     match app_lib::codex::run_spike(prompt).await {
         Ok(outcome) => {
-            println!("account: {:?} ({:?})", outcome.account_email, outcome.plan_type);
+            println!(
+                "account: {:?} ({:?})",
+                outcome.account_email, outcome.plan_type
+            );
             println!("model:   {:?}", outcome.model);
             println!("----- generated -----\n{}", outcome.problem_text);
         }

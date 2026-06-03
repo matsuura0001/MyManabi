@@ -53,6 +53,47 @@ public class IntegrationOcrTests
     }
 
     [Fact]
+    public void Rasterize_ImageSourceCreatesPageWithoutOcr()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "mymanabi-raster-" + Guid.NewGuid().ToString("N"));
+        string sources = Path.Combine(root, "sources");
+        string metaDir = Path.Combine(root, "content", "source-documents");
+        Directory.CreateDirectory(sources);
+        Directory.CreateDirectory(metaDir);
+
+        const string id = "image-sample";
+        string imagePath = Path.Combine(sources, id + ".png");
+        using (var bitmap = new SKBitmap(120, 80))
+        {
+            bitmap.Erase(SKColors.White);
+            ImageOps.SavePng(bitmap, imagePath);
+        }
+        var document = new SourceDocument
+        {
+            Id = id,
+            Kind = "image",
+            OriginalFileName = "sample.png",
+            StoredPath = "sources/" + id + ".png",
+            ByteSize = new FileInfo(imagePath).Length,
+            Status = "stored",
+            ExtractionStatus = "pending-review",
+        };
+        File.WriteAllText(Path.Combine(metaDir, id + ".json"),
+            JsonSerializer.Serialize(document, JsonConfig.Options));
+
+        var options = CliOptions.Parse(new[] { "--source-document", id, "--data-dir", root, "--raster-only" })!;
+        ExtractionResult result = Worker.Rasterize(options);
+
+        Assert.Equal("raster-only", result.Engine);
+        Assert.Single(result.Pages);
+        Assert.Empty(result.Candidates);
+        Assert.True(File.Exists(Path.Combine(root, "content", "extractions", id, "page-001.png")));
+        Assert.True(File.Exists(Path.Combine(root, "content", "extractions", id, "extraction-result.json")));
+
+        try { Directory.Delete(root, recursive: true); } catch { /* best effort cleanup */ }
+    }
+
+    [Fact]
     public void RunRegion_ThrowsOnInvalidRegion_XPlusWidthExceedsOne()
     {
         // The region guard fires before any image loading, so no Tesseract needed.

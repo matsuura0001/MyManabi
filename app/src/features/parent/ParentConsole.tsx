@@ -8,6 +8,7 @@ import { Header } from "../../components/Header";
 import { SummaryCard } from "../../components/SummaryCard";
 import { ImportHistory } from "./ImportHistory";
 import { ExtractionReview } from "./ExtractionReview";
+import { RegionPlanSelector } from "./RegionPlanSelector";
 
 export function ParentConsole({
   variant,
@@ -96,6 +97,30 @@ export function ParentConsole({
     setExtractionPath(null);
     try {
       const result = await invoke<ExtractionResult>("extract_source_document", {
+        sourceDocumentId: importedDocument.id,
+      });
+      const path = await invoke<string>("extraction_result_path", {
+        sourceDocumentId: importedDocument.id,
+      });
+      setExtractionResult(result);
+      setExtractionPath(path);
+      await loadSourceDocuments();
+    } catch (caught) {
+      setImportError(String(caught));
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  async function rasterizeImportedSource() {
+    if (!importedDocument) return;
+
+    setExtracting(true);
+    setImportError(null);
+    setExtractionResult(null);
+    setExtractionPath(null);
+    try {
+      const result = await invoke<ExtractionResult>("rasterize_source_document", {
         sourceDocumentId: importedDocument.id,
       });
       const path = await invoke<string>("extraction_result_path", {
@@ -216,7 +241,7 @@ export function ParentConsole({
           <p className="eyebrow">教材を取り込む</p>
           <h2>教材ファイルを登録</h2>
           <p>
-            PDF、画像、テキストを端末内の DATA_DIR に保存します。登録後にローカル処理で問題候補を作成し、内容を確認します。
+            PDF、画像、テキストを端末内の DATA_DIR に保存します。PDF と画像は先にページ画像を確認し、矩形を指定してから OCR できます。
           </p>
           <button
             className="small-button"
@@ -270,15 +295,32 @@ export function ParentConsole({
                 className="small-button"
                 disabled={extracting}
                 type="button"
+                onClick={rasterizeImportedSource}
+              >
+                {extracting ? "処理中..." : "ページ画像を表示"}
+              </button>
+              <button
+                className="secondary-button"
+                disabled={extracting}
+                type="button"
                 onClick={extractImportedSource}
               >
-                {extracting ? "候補を抽出中..." : "問題候補を抽出"}
+                {extracting ? "候補を抽出中..." : "自動 OCR で候補を抽出"}
               </button>
             </div>
           )}
+          {importedDocument && extractionResult && extractionResult.pages.length > 0 && (
+            <RegionPlanSelector
+              extractionPath={extractionPath}
+              result={extractionResult}
+              setImportError={setImportError}
+              sourceDocumentId={importedDocument.id}
+              onUpdated={setExtractionResult}
+            />
+          )}
           {importedDocument && extractionResult && (
             <ExtractionReview
-              key={importedDocument.id}
+              key={`${importedDocument.id}-${extractionResult.candidates.length}`}
               extractionPath={extractionPath}
               initialResult={extractionResult}
               setImportError={setImportError}

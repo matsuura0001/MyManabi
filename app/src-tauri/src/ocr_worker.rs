@@ -115,7 +115,12 @@ fn worker_command() -> Command {
         .join("src")
         .join("MyManabi.OcrWorker")
         .join("bin");
-    for profile in ["Release", "Debug"] {
+    let profiles = if cfg!(debug_assertions) {
+        ["Debug", "Release"]
+    } else {
+        ["Release", "Debug"]
+    };
+    for profile in profiles {
         let candidate = bin_base.join(profile).join("net8.0").join(exe_name);
         if candidate.exists() {
             return Command::new(candidate);
@@ -188,8 +193,59 @@ pub async fn extract_source_document(
     serde_json::from_slice(&bytes).map_err(|error| format!("parse extraction result: {error}"))
 }
 
+/// Rasterize a stored PDF/image into page images without running OCR. This creates
+/// an extraction-result.json with pages and no candidates so the UI can build a
+/// manual region plan before OCR.
+pub async fn rasterize_source_document(
+    data_dir: &Path,
+    source_document_id: &str,
+    options: &ExtractionOptions,
+) -> Result<ExtractionResult, String> {
+    let mut command = worker_command();
+    command
+        .arg("--source-document")
+        .arg(source_document_id)
+        .arg("--data-dir")
+        .arg(data_dir)
+        .arg("--raster-only")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    if let Some(dpi) = options.dpi {
+        command.arg("--dpi").arg(dpi.to_string());
+    }
+    if let Some(password) = &options.password {
+        command.arg("--password").arg(password);
+    }
+    if let Some(max_pages) = options.max_pages {
+        command.arg("--max-pages").arg(max_pages.to_string());
+    }
+
+    let output = command.output().await.map_err(|error| {
+        format!(
+            "launch OCR worker: {error}. Build tools/ocr-worker (dotnet build -c Release) \
+             or set MYMANABI_OCR_WORKER to the executable."
+        )
+    })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "OCR worker failed ({}): {}",
+            output.status,
+            stderr.trim()
+        ));
+    }
+
+    load_extraction_result(data_dir, source_document_id)
+}
+
 /// Return the local review artifact path so the UI can make DATA_DIR storage visible.
-pub fn extraction_result_path(data_dir: &Path, source_document_id: &str) -> Result<PathBuf, String> {
+pub fn extraction_result_path(
+    data_dir: &Path,
+    source_document_id: &str,
+) -> Result<PathBuf, String> {
     validate_source_document_id(source_document_id)?;
     Ok(data_dir
         .join("content")
@@ -220,7 +276,9 @@ pub fn review_extraction_candidate(
     review_status: &str,
 ) -> Result<ExtractionResult, String> {
     if !matches!(review_status, "draft" | "adult-approved" | "suspended") {
-        return Err(format!("unsupported candidate review status: {review_status}"));
+        return Err(format!(
+            "unsupported candidate review status: {review_status}"
+        ));
     }
     if review_status == "adult-approved" && ocr_text.trim().is_empty() {
         return Err("approved candidate text must not be empty".to_owned());
@@ -246,7 +304,12 @@ pub fn review_extraction_candidate(
 /// Validate that a `RegionRatio` is well-formed: all fields finite, x/y ≥ 0,
 /// width/height > 0, and x+width / y+height ≤ 1.
 fn validate_region(region: &RegionRatio) -> Result<(), String> {
-    let RegionRatio { x, y, width, height } = region;
+    let RegionRatio {
+        x,
+        y,
+        width,
+        height,
+    } = region;
     if !x.is_finite() || !y.is_finite() || !width.is_finite() || !height.is_finite() {
         return Err("region fields must be finite".to_owned());
     }
@@ -284,6 +347,28 @@ fn merge_reextracted_candidate(
     Ok(result)
 }
 
+fn next_manual_candidate_id(result: &ExtractionResult, page: u32) -> String {
+    let prefix = format!("{}-p{page:03}-m", result.source_document_id);
+    let next = result
+        .candidates
+        .iter()
+        .filter_map(|candidate| candidate.candidate_id.strip_prefix(&prefix))
+        .filter_map(|suffix| suffix.parse::<u32>().ok())
+        .max()
+        .unwrap_or(0)
+        + 1;
+    format!("{prefix}{next:02}")
+}
+
+fn append_manual_candidate(
+    mut result: ExtractionResult,
+    candidate: CandidateResult,
+) -> ExtractionResult {
+    result.candidates.push(candidate);
+    result.metrics.candidate_questions = result.candidates.len() as u32;
+    result
+}
+
 /// Re-run OCR on a user-specified region for one candidate.
 /// The worker emits a single CandidateResult JSON to stdout; this function
 /// merges it into the existing extraction-result.json without touching other candidates.
@@ -315,7 +400,10 @@ pub async fn reextract_candidate_region(
         .arg("--page")
         .arg(page.to_string())
         .arg("--region")
-        .arg(format!("{},{},{},{}", region.x, region.y, region.width, region.height))
+        .arg(format!(
+            "{},{},{},{}",
+            region.x, region.y, region.width, region.height
+        ))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -358,6 +446,75 @@ pub async fn reextract_candidate_region(
     Ok(result)
 }
 
+/// Run OCR on a manually selected page region and append it as a new draft
+/// candidate. This is the pre-review path used after raster-only import.
+pub async fn ocr_source_region(
+    data_dir: &Path,
+    source_document_id: &str,
+    page: u32,
+    region: &RegionRatio,
+) -> Result<ExtractionResult, String> {
+    validate_region(region)?;
+
+    let mut result = load_extraction_result(data_dir, source_document_id)?;
+    if !result.pages.iter().any(|item| item.page == page) {
+        return Err(format!("page not found in extraction result: {page}"));
+    }
+    let candidate_id = next_manual_candidate_id(&result, page);
+
+    let mut command = worker_command();
+    command
+        .arg("--source-document")
+        .arg(source_document_id)
+        .arg("--data-dir")
+        .arg(data_dir)
+        .arg("--candidate-id")
+        .arg(&candidate_id)
+        .arg("--page")
+        .arg(page.to_string())
+        .arg("--region")
+        .arg(format!(
+            "{},{},{},{}",
+            region.x, region.y, region.width, region.height
+        ))
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let output = command.output().await.map_err(|error| {
+        format!(
+            "launch OCR worker: {error}. Build tools/ocr-worker (dotnet build -c Release) \
+             or set MYMANABI_OCR_WORKER to the executable."
+        )
+    })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "OCR worker failed ({}): {}",
+            output.status,
+            stderr.trim()
+        ));
+    }
+
+    let candidate: CandidateResult = serde_json::from_slice(&output.stdout).map_err(|error| {
+        let preview = String::from_utf8_lossy(&output.stdout);
+        format!(
+            "parse manual region OCR result: {error}. stdout (first 200 chars): {}",
+            &preview[..preview.len().min(200)]
+        )
+    })?;
+
+    result = append_manual_candidate(result, candidate);
+    let path = extraction_result_path(data_dir, source_document_id)?;
+    let bytes = serde_json::to_vec_pretty(&result)
+        .map_err(|error| format!("serialize extraction result: {error}"))?;
+    std::fs::write(&path, bytes)
+        .map_err(|error| format!("write extraction result {}: {error}", path.display()))?;
+
+    Ok(result)
+}
+
 fn validate_source_document_id(source_document_id: &str) -> Result<(), String> {
     if !source_document_id.is_empty()
         && source_document_id
@@ -367,9 +524,7 @@ fn validate_source_document_id(source_document_id: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    Err(format!(
-        "invalid source document id: {source_document_id}"
-    ))
+    Err(format!("invalid source document id: {source_document_id}"))
 }
 
 #[cfg(test)]
@@ -451,48 +606,85 @@ mod tests {
 
     #[test]
     fn validate_region_accepts_full_page() {
-        validate_region(&RegionRatio { x: 0.0, y: 0.0, width: 1.0, height: 1.0 })
-            .expect("full-page region should be valid");
+        validate_region(&RegionRatio {
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+        })
+        .expect("full-page region should be valid");
     }
 
     #[test]
     fn validate_region_accepts_interior_rect() {
-        validate_region(&RegionRatio { x: 0.1, y: 0.2, width: 0.5, height: 0.4 })
-            .expect("interior region should be valid");
+        validate_region(&RegionRatio {
+            x: 0.1,
+            y: 0.2,
+            width: 0.5,
+            height: 0.4,
+        })
+        .expect("interior region should be valid");
     }
 
     #[test]
     fn validate_region_rejects_out_of_bounds() {
-        let err = validate_region(&RegionRatio { x: 0.5, y: 0.0, width: 0.6, height: 1.0 })
-            .expect_err("x+width > 1 should be rejected");
-        assert!(err.contains("x+width"), "error should mention x+width, got: {err}");
+        let err = validate_region(&RegionRatio {
+            x: 0.5,
+            y: 0.0,
+            width: 0.6,
+            height: 1.0,
+        })
+        .expect_err("x+width > 1 should be rejected");
+        assert!(
+            err.contains("x+width"),
+            "error should mention x+width, got: {err}"
+        );
     }
 
     #[test]
     fn validate_region_rejects_zero_width() {
-        let err = validate_region(&RegionRatio { x: 0.0, y: 0.0, width: 0.0, height: 0.5 })
-            .expect_err("zero width should be rejected");
-        assert!(err.contains("width"), "error should mention width, got: {err}");
+        let err = validate_region(&RegionRatio {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.5,
+        })
+        .expect_err("zero width should be rejected");
+        assert!(
+            err.contains("width"),
+            "error should mention width, got: {err}"
+        );
     }
 
     #[test]
     fn validate_region_rejects_negative_x() {
-        let err = validate_region(&RegionRatio { x: -0.1, y: 0.0, width: 0.5, height: 0.5 })
-            .expect_err("negative x should be rejected");
+        let err = validate_region(&RegionRatio {
+            x: -0.1,
+            y: 0.0,
+            width: 0.5,
+            height: 0.5,
+        })
+        .expect_err("negative x should be rejected");
         assert!(err.contains('x') || err.contains("≥"), "got: {err}");
     }
 
     #[test]
     fn validate_region_rejects_nan() {
-        let err = validate_region(&RegionRatio { x: f64::NAN, y: 0.0, width: 0.5, height: 0.5 })
-            .expect_err("NaN should be rejected");
+        let err = validate_region(&RegionRatio {
+            x: f64::NAN,
+            y: 0.0,
+            width: 0.5,
+            height: 0.5,
+        })
+        .expect_err("NaN should be rejected");
         assert!(err.contains("finite"), "got: {err}");
     }
 
     // --- merge_reextracted_candidate ---
 
     fn minimal_result_with_item_label() -> ExtractionResult {
-        serde_json::from_str(r#"{
+        serde_json::from_str(
+            r#"{
           "sourceDocumentId":"src","engine":"tesseract","engineVersion":"5",
           "language":"jpn","dpi":300,"generatedAtEpochSeconds":1,"pageCount":1,
           "pages":[],
@@ -505,7 +697,9 @@ mod tests {
           "metrics":{"extractionRoute":"local-ocr","localOcrEngine":"tesseract",
             "pages":1,"candidateQuestions":1,"aiAssistedRegions":0,
             "adultCorrections":0,"elapsedMs":1,"estimatedApiCostUsd":0}
-        }"#).expect("parse fixture")
+        }"#,
+        )
+        .expect("parse fixture")
     }
 
     #[test]
@@ -515,7 +709,12 @@ mod tests {
             candidate_id: "src-p001-c01".to_owned(),
             page: 1,
             item_label: None, // worker does not set item_label
-            region: RegionRatio { x: 0.1, y: 0.1, width: 0.8, height: 0.8 },
+            region: RegionRatio {
+                x: 0.1,
+                y: 0.1,
+                width: 0.8,
+                height: 0.8,
+            },
             region_image_path: None,
             ocr_text: "new text".to_owned(),
             confidence: 0.9,
@@ -526,10 +725,15 @@ mod tests {
         let merged = merge_reextracted_candidate(result, "src-p001-c01", updated)
             .expect("merge should succeed");
 
-        assert_eq!(merged.candidates[0].item_label.as_deref(), Some("問1"),
-            "item_label must be preserved from original candidate");
-        assert_eq!(merged.candidates[0].ocr_text, "new text",
-            "ocr_text must be updated from the re-extraction");
+        assert_eq!(
+            merged.candidates[0].item_label.as_deref(),
+            Some("問1"),
+            "item_label must be preserved from original candidate"
+        );
+        assert_eq!(
+            merged.candidates[0].ocr_text, "new text",
+            "ocr_text must be updated from the re-extraction"
+        );
     }
 
     #[test]
@@ -549,5 +753,56 @@ mod tests {
 
         merge_reextracted_candidate(result, "nonexistent", updated)
             .expect_err("should error when candidate_id is not in result");
+    }
+
+    #[test]
+    fn next_manual_candidate_id_increments_per_page() {
+        let mut result = minimal_result_with_item_label();
+        result.candidates.push(CandidateResult {
+            candidate_id: "src-p001-m01".to_owned(),
+            page: 1,
+            item_label: None,
+            region: RegionRatio {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
+            region_image_path: None,
+            ocr_text: "manual".to_owned(),
+            confidence: 1.0,
+            suggested_question_type: "unknown".to_owned(),
+            review_status: "draft".to_owned(),
+        });
+
+        assert_eq!(next_manual_candidate_id(&result, 1), "src-p001-m02");
+        assert_eq!(next_manual_candidate_id(&result, 2), "src-p002-m01");
+    }
+
+    #[test]
+    fn append_manual_candidate_updates_candidate_count_metric() {
+        let result = minimal_result_with_item_label();
+        let appended = append_manual_candidate(
+            result,
+            CandidateResult {
+                candidate_id: "src-p001-m01".to_owned(),
+                page: 1,
+                item_label: None,
+                region: RegionRatio {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1.0,
+                    height: 1.0,
+                },
+                region_image_path: None,
+                ocr_text: "manual".to_owned(),
+                confidence: 1.0,
+                suggested_question_type: "unknown".to_owned(),
+                review_status: "draft".to_owned(),
+            },
+        );
+
+        assert_eq!(appended.candidates.len(), 2);
+        assert_eq!(appended.metrics.candidate_questions, 2);
     }
 }

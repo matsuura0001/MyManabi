@@ -4,6 +4,26 @@ import "react-image-crop/dist/ReactCrop.css";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import type { ExtractionCandidate, ExtractionResult, RegionRatio } from "../../domain/extraction";
 
+function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
+}
+
+function toRegion(crop: Crop | undefined): RegionRatio | null {
+  if (!crop) return null;
+  const x = clamp(crop.x / 100, 0, 1);
+  const y = clamp(crop.y / 100, 0, 1);
+  const width = clamp(crop.width / 100, 0, 1 - x);
+  const height = clamp(crop.height / 100, 0, 1 - y);
+  if (width <= 0 || height <= 0) return null;
+  return { x, y, width, height };
+}
+
+function ignorePasteOrDrop(event: React.ClipboardEvent | React.DragEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+}
+
 export function RegionEditModal({
   candidate,
   extractionPath,
@@ -48,12 +68,11 @@ export function RegionEditModal({
     setIsProcessing(true);
     setError(null);
     try {
-      const region: RegionRatio = {
-        x: crop.x / 100,
-        y: crop.y / 100,
-        width: crop.width / 100,
-        height: crop.height / 100,
-      };
+      const region = toRegion(crop);
+      if (!region) {
+        setError("有効な領域を選択してください。");
+        return;
+      }
       const result = await invoke<ExtractionResult>("reextract_candidate_region", {
         sourceDocumentId,
         candidateId: candidate.candidateId,
@@ -84,7 +103,12 @@ export function RegionEditModal({
           </button>
         </div>
 
-        <div className="region-modal-body">
+        <div
+          className="region-modal-body"
+          onDrop={ignorePasteOrDrop}
+          onDragOver={(event) => event.preventDefault()}
+          onPaste={ignorePasteOrDrop}
+        >
           {imageLoadFailed && (
             <div className="region-image-error">
               <p>ページ画像を読み込めませんでした。</p>
@@ -98,7 +122,17 @@ export function RegionEditModal({
           {pageImageUrl && !imageLoadFailed && (
             <ReactCrop
               crop={crop}
-              onChange={(_px, percentCrop) => setCrop(percentCrop)}
+              onChange={(_px, percentCrop) => {
+                const region = toRegion(percentCrop);
+                if (!region) return;
+                setCrop({
+                  unit: "%",
+                  x: region.x * 100,
+                  y: region.y * 100,
+                  width: region.width * 100,
+                  height: region.height * 100,
+                });
+              }}
             >
               <img
                 src={pageImageUrl}

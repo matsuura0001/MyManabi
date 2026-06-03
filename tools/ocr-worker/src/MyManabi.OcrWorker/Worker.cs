@@ -11,6 +11,64 @@ namespace MyManabi.OcrWorker;
 /// </summary>
 public static class Worker
 {
+    public static ExtractionResult Rasterize(CliOptions options)
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        string dataDir = options.DataDir is null ? DataDir.Resolve() : Path.GetFullPath(options.DataDir);
+        var (document, sourcePath) = ResolveSource(options, dataDir);
+        if (document.Kind == "text")
+            throw new InvalidOperationException("raster-only import is not supported for text sources");
+
+        string relativeDir = $"content/extractions/{document.Id}";
+        string outputDir = Path.Combine(dataDir, "content", "extractions", document.Id);
+        Directory.CreateDirectory(outputDir);
+
+        var pages = new List<PageResult>();
+        foreach (var (index, bitmap) in RenderPages(document, sourcePath, options))
+        {
+            using (bitmap)
+            {
+                int pageNumber = index + 1;
+                string pageFile = $"page-{pageNumber:D3}.png";
+                ImageOps.SavePng(bitmap, Path.Combine(outputDir, pageFile));
+                pages.Add(new PageResult
+                {
+                    Page = pageNumber,
+                    Width = bitmap.Width,
+                    Height = bitmap.Height,
+                    ImagePath = $"{relativeDir}/{pageFile}",
+                    OcrText = "",
+                    MeanConfidence = 0,
+                });
+            }
+        }
+
+        var result = new ExtractionResult
+        {
+            SourceDocumentId = document.Id,
+            Engine = "raster-only",
+            EngineVersion = "",
+            Language = "und",
+            Dpi = options.Dpi,
+            GeneratedAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            PageCount = pages.Count,
+            Pages = pages,
+            Candidates = new List<CandidateResult>(),
+            Metrics = new ImportMetrics
+            {
+                ExtractionRoute = "raster-only",
+                LocalOcrEngine = "none",
+                Pages = pages.Count,
+                CandidateQuestions = 0,
+                ElapsedMs = stopwatch.ElapsedMilliseconds,
+            },
+        };
+
+        WriteResult(outputDir, relativeDir, result);
+        return result;
+    }
+
     public static ExtractionResult Run(CliOptions options)
     {
         var stopwatch = Stopwatch.StartNew();

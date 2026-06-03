@@ -212,7 +212,10 @@ pub async fn run_spike(prompt: &str) -> Result<SpikeOutcome, String> {
                 }
                 Some("turn/completed") => break,
                 Some("error") => {
-                    return Err(format!("turn error: {}", msg.get("params").unwrap_or(&Value::Null)));
+                    return Err(format!(
+                        "turn error: {}",
+                        msg.get("params").unwrap_or(&Value::Null)
+                    ));
                 }
                 _ => {}
             },

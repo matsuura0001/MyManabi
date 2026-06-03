@@ -20,7 +20,9 @@ try
     }
     else
     {
-        ExtractionResult result = Worker.Run(options);
+        ExtractionResult result = options.RasterOnly
+            ? Worker.Rasterize(options)
+            : Worker.Run(options);
         Console.Out.WriteLine(JsonSerializer.Serialize(result, JsonConfig.Options));
     }
     return 0;

@@ -427,6 +427,15 @@ source-page
 
 ### 12.3 Question Entity の追加候補
 
+問題文と答えは、どちらもテキストだけとは限らない。図形、作図、書き取り、筆算、表、グラフ、ヒアリング問題では、問題も答えも画像や音声で持つ必要がある。
+
+Question Entity は次を分けて持つ。
+
+- `presentation`: 子どもへ提示するもの
+- `expected_response`: 子どもに求める回答の形
+- `answer`: 答え合わせや保護者確認に使う正答・模範・証拠
+- `source_mapping`: 問題領域と答え領域の対応関係
+
 ```yaml
 presentation:
   type: source-region
@@ -438,15 +447,175 @@ presentation:
     width: 0.80
     height: 0.12
 source_item_label: "1"
+expected_response:
+  type: handwriting # text / numeric / choice / handwriting / speech / drawing / parent-review
 answer:
-  type: exact-text
-  value: "例"
+  type: source-region
+  document_id: print-kanji-answer-001
+  page: 1
+  region:
+    x: 0.10
+    y: 0.18
+    width: 0.80
+    height: 0.12
+  text_value: "例"
 answer_review_status: adult-approved
 ```
 
 領域座標はページ幅、高さに対する割合で保持する。端末サイズや画像解像度が変わっても再利用しやすい。
 
-### 12.4 答え合わせの扱い
+`answer.text_value` は任意の補助情報である。表示上の正は画像や音声でもよいが、検索、復習分析、簡易採点、保護者確認を助けるため、分かる範囲でテキスト値、タグ、rubric を併記できる。
+
+```yaml
+answer:
+  type: exact-text
+  value: "90°"
+```
+
+```yaml
+answer:
+  type: source-region
+  document_id: angle-print-answer-001
+  page: 1
+  region:
+    x: 0.12
+    y: 0.20
+    width: 0.18
+    height: 0.18
+  text_value: "90°"
+  tags:
+    - right-angle
+```
+
+```yaml
+answer:
+  type: exemplar-audio
+  media_id: audio-answer-001
+  transcript: "The answer is ..."
+```
+
+`source_mapping` は、問題側と答え側の対応を明示する。問題用 PDF と解答用 PDF が別ファイルの場合、ページ番号や見た目だけで推測しない。
+
+```yaml
+source_mapping:
+  question_region_id: qreg-001
+  answer_region_id: areg-001
+  relation: same-item
+  item_label: "1"
+  confidence: adult-confirmed # adult-confirmed / heuristic / ai-suggested
+```
+
+批判的に確認する点:
+
+- 答えを画像だけにすると、検索、弱点分析、簡易採点が弱くなる
+- 答えをテキストだけにすると、図形、作図、書き取り、筆算、表、グラフで問題の本質を失う
+- 問題画像と答え画像の対応付けを暗黙にすると、誤対応が学習結果そのものを壊す
+- AI が画像や OCR テキストから答えを補う場合も、`adult-confirmed` になるまでは出題対象にしない
+
+### 12.4 音声を使う出題
+
+音声問題も、画像問題と同じく `presentation` と `answer` を分ける。初期 PoC では、音声認識や発音採点を確定判定に使わず、本人または保護者確認を基本にする。
+
+```yaml
+presentation:
+  type: audio
+  media_id: listening-question-001
+  transcript: "補助用の文字起こし。子どもに表示するかは別設定"
+expected_response:
+  type: text
+answer:
+  type: exact-text
+  value: "..."
+grading:
+  method: deterministic-or-parent-review
+```
+
+```yaml
+presentation:
+  type: source-region
+  document_id: kanji-print-001
+  page: 1
+  region:
+    x: 0.10
+    y: 0.20
+    width: 0.30
+    height: 0.12
+expected_response:
+  type: handwriting
+answer:
+  type: exemplar-image
+  media_id: kanji-answer-image-001
+  text_value: "山"
+grading:
+  method: self-or-parent-review
+```
+
+ヒアリング問題では「音声を聞いて文字で答える」、書き取り問題では「画像や音声で指示を出して手書きで答える」という形がある。どちらも回答イベントには、入力テキスト、手書き画像、音声録音などの回答媒体を別に記録する。
+
+批判的に確認する点:
+
+- 音声データは個人情報になりやすいため、保存目的、削除方法、外部送信の有無を UI で明確にする
+- 自動音声認識は、子どもの発音、周囲の音、マイク品質で誤りやすい
+- ヒアリング問題の transcript は便利だが、子どもに見せると問題が成立しない場合がある
+- 書き取りの自動採点は PoC では急がず、模範表示と本人/保護者確認を優先する
+
+### 12.5 領域指定の継承
+
+初期 PoC の `source-region` 取り込みでは、ページごとに毎回矩形を指定させない。最初に指定した矩形を次ページ以降へ引き継ぎ、取り込めない部分だけ保護者が介入する流れを基本にする。
+
+```text
+PDF 原本
+  → ページ画像化
+  → 初期領域計画を作成
+  → ページを確認しながら必要箇所だけ矩形を修正
+  → 矩形ごとに OCR または領域画像を候補化
+  → レビュー画面
+```
+
+何も指定しない場合は、「未指定」ではなく「全ページ全体を対象にする既定矩形」として扱う。これにより、後から再実行、差分確認、レビュー対象の説明ができる。
+
+領域計画はページごとに次の状態を持つ。
+
+```yaml
+region_plan:
+  page: 1
+  region:
+    x: 0.00
+    y: 0.00
+    width: 1.00
+    height: 1.00
+  source: default-full-page # default-full-page / inherited / manual
+  status: pending # pending / ocr-done / needs-adjustment / skipped
+```
+
+継承ルール:
+
+- 1ページ目で矩形を指定した場合、その矩形を次ページ以降の `pending` または `inherited` な領域計画へ引き継ぐ
+- 途中ページで矩形を修正した場合、操作は「このページだけ変更」と「このページ以降に適用」を分ける
+- 「このページ以降に適用」は、以降の `pending` または `inherited` の領域計画だけを更新する
+- `manual` の領域計画は、人が明示的に介入した結果なので一括更新で上書きしない
+- ページのレイアウトが崩れている、問題数が変わる、余白が大きく違う場合は `needs-adjustment` として保護者確認へ回す
+- 取り込まないページは `skipped` として記録し、暗黙に失敗扱いしない
+
+UI は少なくとも次の操作を分けて表示する。
+
+```text
+全ページ全体を取り込む
+前ページの矩形を引き継ぐ
+このページだけ変更
+このページ以降に適用
+このページをスキップ
+OCR を実行
+```
+
+批判的に確認する点:
+
+- 比率座標の引き継ぎは、同じレイアウトのプリントでは有効だが、章末問題や段組みが変わる教材では静かにズレる
+- 「このページだけ」と「以降へ適用」を分けないと、保護者が例外対応したつもりの修正で後続ページを壊す
+- 全ページ全体の既定矩形は便利だが、図表や解答欄まで OCR 対象に入りやすい
+- 手動介入済みの `manual` 領域を一括変更で上書きすると、レビュー済みの作業を失いやすい
+
+### 12.6 答え合わせの扱い
 
 PDF 原本を表示する場合も、答えの対応付けは曖昧にしない。
 
@@ -463,14 +632,14 @@ PDF 原本を表示する場合も、答えの対応付けは曖昧にしない�
 漢字の書き取りでは、端末上での自動採点を必須にしない。
 初期段階では、模範解答を表示して本人または保護者が確認する方式も許容する。
 
-### 12.5 長所
+### 12.7 長所
 
 - OCR 精度が低くても、原本の問題文を改変せずに使える
 - PDF 全体を外部 AI へ送らずに済む
 - 問題文の JSON 化より入力負担が小さい
 - 問題 ID があるため、正答率、前回出題日時、保護者指定、重み付けを記録できる
 
-### 12.6 制約
+### 12.8 制約
 
 - PDF ページ全体表示は、小さい画面では読みづらい
 - 問題領域の指定 UI が必要になる
@@ -478,15 +647,26 @@ PDF 原本を表示する場合も、答えの対応付けは曖昧にしない�
 - 著作権を含む領域画像も DATA_DIR 外へ出さない
 - 類題生成や検索には、後から Skill や OCR テキストを補う必要がある
 
-### 12.7 初期実装の優先順位
+### 12.9 初期実装の優先順位
 
 ```text
 (1) PDF をローカルでページ画像化
 (2) ページ単位で表示
-(3) 問題番号と答えを手動で対応付ける
-(4) 領域を切り出して表示する
-(5) OCR で領域候補を提案する
-(6) 必要な問題だけ normalized Question へ昇格する
+(3) 全ページ全体の既定領域計画を作る
+(4) 最初の矩形を次ページ以降へ引き継ぐ
+(5) 取り込めないページだけ矩形を修正する
+(6) 問題番号と答えを手動で対応付ける
+(7) 領域を切り出して表示する
+(8) OCR で領域候補、問題番号、解答候補を提案する
+(9) 必要な問題だけ normalized Question へ昇格する
 ```
 
 OCR は確定処理ではなく、領域候補、問題番号、解答候補を提案する補助として使う。
+
+実装上の移行タスク:
+
+- `schemas/question.schema.json` の `body` と `answer.value` 必須を緩め、`presentation`、`expected_response`、画像/音声 answer を追加する
+- Rust の `Question` / `Answer` 型と validation を、テキスト専用から媒体対応へ広げる
+- React の `Question` 型と学習者 UI を、`body` 表示だけでなく `source-region`、`image`、`audio` を描画できるようにする
+- 回答イベントに、テキスト回答、手書き画像、音声録音などの回答媒体を分けて保存できるようにする
+- 公開用統計には、問題画像、答え画像、音声、手書き回答を含めないことを検証する

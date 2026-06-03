@@ -13,6 +13,7 @@ public sealed class CliOptions
     public string? Password { get; private set; }
     public bool NoCrops { get; private set; }
     public int MaxPages { get; private set; }
+    public bool RasterOnly { get; private set; }
 
     // Re-extraction mode: re-run OCR on a single candidate region.
     // All three must be set together.
@@ -65,6 +66,9 @@ public sealed class CliOptions
                         break;
                     case "--max-pages":
                         o.MaxPages = int.Parse(Next(arg), CultureInfo.InvariantCulture);
+                        break;
+                    case "--raster-only":
+                        o.RasterOnly = true;
                         break;
                     case "--candidate-id":
                         o.CandidateId = Next(arg);
@@ -146,6 +150,8 @@ public sealed class CliOptions
                   --password <pw>         PDF open password
                   --no-crops              Do not write per-candidate region crops
                   --max-pages <n>         Process at most n pages (0 = all)
+                  --raster-only           Write page images and extraction-result.json
+                                          without running OCR
               -h, --help                  Show this help
 
             Output (under DATA_DIR, never committed):

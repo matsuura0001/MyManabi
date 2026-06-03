@@ -131,7 +131,8 @@ pub fn save_approved_question(data_dir: &Path, question: &Question) -> Result<Qu
 
     let bytes = serde_json::to_vec_pretty(question)
         .map_err(|error| format!("serialize question {}: {error}", question.id))?;
-    fs::write(&path, bytes).map_err(|error| format!("write question {}: {error}", path.display()))?;
+    fs::write(&path, bytes)
+        .map_err(|error| format!("write question {}: {error}", path.display()))?;
     Ok(question.clone())
 }
 
@@ -162,14 +163,28 @@ fn validate_question(question: &Question) -> Result<(), String> {
     if question.unit_id.trim().is_empty() {
         return Err("question unitId must not be empty".to_owned());
     }
-    if question.skill_ids.is_empty() || question.skill_ids.iter().any(|skill| skill.trim().is_empty()) {
+    if question.skill_ids.is_empty()
+        || question
+            .skill_ids
+            .iter()
+            .any(|skill| skill.trim().is_empty())
+    {
         return Err("question skillIds must not be empty".to_owned());
     }
     if !matches!(
         question.question_type.as_str(),
-        "numeric" | "kanji" | "multiple-choice" | "word-problem" | "free-text" | "handwriting" | "speech"
+        "numeric"
+            | "kanji"
+            | "multiple-choice"
+            | "word-problem"
+            | "free-text"
+            | "handwriting"
+            | "speech"
     ) {
-        return Err(format!("unsupported question type: {}", question.question_type));
+        return Err(format!(
+            "unsupported question type: {}",
+            question.question_type
+        ));
     }
     if question.title.trim().is_empty() {
         return Err("question title must not be empty".to_owned());
@@ -186,12 +201,11 @@ fn validate_question(question: &Question) -> Result<(), String> {
     if question.purposes.is_empty() {
         return Err("question purposes must not be empty".to_owned());
     }
-    if question.purposes.iter().any(|purpose| {
-        !matches!(
-            purpose.as_str(),
-            "learning" | "review" | "assessment"
-        )
-    }) {
+    if question
+        .purposes
+        .iter()
+        .any(|purpose| !matches!(purpose.as_str(), "learning" | "review" | "assessment"))
+    {
         return Err("question purposes include an unsupported value".to_owned());
     }
     Ok(())

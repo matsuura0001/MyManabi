@@ -1044,3 +1044,68 @@ h2 {
   color: #82908b;
   font-size: 13px;
 }
+
+.region-plan {
+  background: #fffdf7;
+  border: 1px solid #ded8cc;
+  border-radius: 12px;
+  margin-top: 14px;
+  padding: 14px;
+}
+
+.region-plan-header {
+  align-items: start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.region-plan-header h2 {
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+
+.region-plan-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.region-plan-tabs button {
+  background: #f7f4ec;
+  border: 1px solid #d8d0c0;
+  border-radius: 8px;
+  color: #53645f;
+  font-weight: 800;
+  min-height: 34px;
+  min-width: 38px;
+}
+
+.region-plan-tabs .active {
+  background: #276553;
+  border-color: #276553;
+  color: #fff;
+}
+
+.region-plan-stage {
+  background: #f7f4ec;
+  border: 1px solid #ded8cc;
+  border-radius: 10px;
+  max-height: 68vh;
+  overflow: auto;
+  padding: 10px;
+}
+
+.region-plan-stage img {
+  display: block;
+  max-height: 64vh;
+  max-width: 100%;
+}
+
+.region-plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}

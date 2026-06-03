@@ -89,6 +89,19 @@ async fn extract_source_document(
     ocr_worker::extract_source_document(&data_dir, &source_document_id, &options).await
 }
 
+/// Rasterize a stored source into page images without OCR, so regions can be
+/// selected before candidate extraction.
+#[tauri::command]
+async fn rasterize_source_document(
+    data_dir: Option<String>,
+    source_document_id: String,
+    options: Option<ocr_worker::ExtractionOptions>,
+) -> Result<ocr_worker::ExtractionResult, String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    let options = options.unwrap_or_default();
+    ocr_worker::rasterize_source_document(&data_dir, &source_document_id, &options).await
+}
+
 #[tauri::command]
 fn extraction_result_path(
     data_dir: Option<String>,
@@ -118,6 +131,17 @@ async fn reextract_candidate_region(
     let data_dir = resolve_data_dir(data_dir)?;
     ocr_worker::reextract_candidate_region(&data_dir, &source_document_id, &candidate_id, &region)
         .await
+}
+
+#[tauri::command]
+async fn ocr_source_region(
+    data_dir: Option<String>,
+    source_document_id: String,
+    page: u32,
+    region: ocr_worker::RegionRatio,
+) -> Result<ocr_worker::ExtractionResult, String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    ocr_worker::ocr_source_region(&data_dir, &source_document_id, page, &region).await
 }
 
 #[tauri::command]
@@ -223,11 +247,13 @@ pub fn run() {
             import_source_from_path,
             list_source_documents,
             extract_source_document,
+            rasterize_source_document,
             extraction_result_path,
             load_extraction_result,
             review_extraction_candidate,
             promote_extraction_candidate,
-            reextract_candidate_region
+            reextract_candidate_region,
+            ocr_source_region
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
