@@ -22,8 +22,10 @@ export type ExtractionCandidate = {
   regionImagePath?: string;
   ocrText: string;
   confidence: number;
-  suggestedQuestionType: string;
-  reviewStatus: "draft" | "adult-approved" | "suspended";
+  suggestedQuestionType?: string;
+  suggestedSubject?: string;
+  suggestedUnitId?: string;
+  reviewStatus: "draft" | "adult-approved" | "rejected";
 };
 
 export type PromotionForm = {

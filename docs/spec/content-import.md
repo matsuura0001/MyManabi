@@ -304,21 +304,38 @@ AI へ PDF 全体を常に送信しない。問題候補を作るために必要
 Stage 0: PDF・画像・テキスト保存と SourceDocument 登録
 Stage 1: PDF・画像のローカルページ画像化
 Stage 2: ローカル OCR またはテキスト読み込みと候補分割
-Stage 3: 保護者による確認、修正
-Stage 4: 任意の AI 補助
+Stage 3: AI-OCR による自動・手動読み直し（保護者確認前）
+Stage 4: 保護者による確認、修正、Question JSON へ昇格
 ```
 
 Stage 0 は本体（Rust）が担う。Stage 1–2 は C# + Tesseract のローカル OCR ワーカー
 （[`tools/ocr-worker`](../../tools/ocr-worker)）として実装済みで、保存済み PDF を PDFium で
 ページ画像化し、画像も含めて Tesseract で日本語 OCR を行い、問題番号マーカーで候補へ分割する。
 UTF-8 テキストは OCR を通さず draft 候補にする。出力は
-確認用の中間成果物（`extraction-result.json`、初期値 `reviewStatus: draft`）で、Stage 3 の
-確認時に OCR 本文を修正し、候補を `adult-approved` または `suspended` にできる。
-ただし、この承認は OCR 候補の確認であり、答えと単元を設定して Question JSON にするまでは出題しない。
-初期 UI では、承認済み候補だけを対象に、教科、単元 ID、Skill ID、問題種別、答えを入力して
-`<DATA_DIR>/content/questions/*.json` へ昇格する。
+確認用の中間成果物（`extraction-result.json`、初期値 `reviewStatus: draft`）である。
 
-AI 補助は既定でオフにする。利用者が有効化した場合も、次の順序で利用する。
+取り込み開始時に、保護者は「通常 OCR」または「複雑なレイアウト向け AI-OCR」を選択できる。
+AI-OCR を初期から選択した場合、ローカル OCR の代わりに（または併用して）高精度の領域抽出とテキスト認識を行う。
+
+Stage 3（AI-OCR 補正）は、通常のローカル OCR を選択した場合でも、結果が不十分な箇所を保護者確認前に補正する。UI 上の出現ポイントは以下の 2 つである：
+- 取り込み開始時: 「複雑なレイアウト向け AI-OCR」を選択し、全編または難しいページへ自動で適用する。
+- OCR 候補レビュー時: 低信頼度候補に対して手動で「AI で読み直す」を実行する。
+
+自動フォールバック条件の例：
+- `candidate.confidence` が閾値未満
+- OCR テキストが空、短すぎる、文字化けしている
+- 問題番号や解答欄の構造を認識できない
+- 領域再指定後も信頼度が改善しない
+
+Stage 4（保護者確認）では、AI 補正後も含めた候補の確認を行う。OCR 本文を修正し、候補を `adult-approved` または `suspended` にできる。
+この承認は OCR 候補の確認であり、答えと単元を設定して Question JSON にするまでは出題しない。
+初期 UI では、承認済み候補だけを対象に、教科、単元、問題種別、答えを確認して
+`<DATA_DIR>/content/questions/*.json` へ昇格する。`Question ID`、`unitId`、`skillIds` のような内部 ID は
+通常の利用者へ自由入力させない。単元は表示名から選択し、`unitId` はシステムが解決する。
+Skill は単元に登録済みの候補から自動付与するか、必要な場合だけ表示名から選択する。
+適切な Skill が存在しない場合に、利用者へ新しい Skill ID の命名を求めない。
+
+AI 補助（Stage 3）は既定でオフにする。利用者が有効化した場合も、次の順序で利用する。
 
 ```text
 OCR テキストだけを低コストモデルへ送る
@@ -888,6 +905,23 @@ AI-OCR で PDF 全体を送る経路は選択肢として残すが、標準経�
 (3) 回答テキスト・採点方法
 (4) 単元・Skill・並び順
 ```
+
+問題種別は、JSON・API 内では `questionType` の安定した英字値を保持する。一方、利用者向け UI では
+日本語ラベルを主表示し、内部値も確認できるよう `数値回答（numeric）` のように二重表記する。
+英字値だけを表示したり、利用者へ値を手入力させたりしない。
+
+| `questionType` | 利用者向け表示 |
+| --- | --- |
+| `numeric` | 数値回答（numeric） |
+| `kanji` | 漢字（kanji） |
+| `multiple-choice` | 選択式（multiple-choice） |
+| `word-problem` | 文章題（word-problem） |
+| `free-text` | 自由記述（free-text） |
+| `handwriting` | 手書き回答（handwriting） |
+| `speech` | 音声回答（speech） |
+
+Skill は習熟度推定や出題選定に使う内部分類であり、利用者向け UI では `skillIds` を直接表示・入力させない。
+表示が必要な場合は Skill の日本語名を使い、詳細情報としてのみ内部 ID を確認できるようにする。
 
 一括承認画面では、問題画像、回答画像、回答テキスト、採点方式、状態を並べ、原本ページへ拡大できるようにする。回答画像を正として使える問題は、回答テキストがなくても承認可能にする。
 

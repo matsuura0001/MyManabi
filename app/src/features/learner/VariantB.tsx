@@ -8,44 +8,18 @@ export function VariantB(props: LearnerProps) {
       <Header view={props.view} setView={props.setView} />
       <section className="home-grid">
         <article className="welcome-panel">
-          <p className="eyebrow">こんにちは、あおい</p>
-          <h1>分数のたし算</h1>
-          <p>前回の続き / 7 問まで完了</p>
-          <button
-            className="primary-button large"
-            type="button"
-            onClick={() => props.setNotice("前回の続きから始めます。")}
-          >
-            前回のつづき
-          </button>
-        </article>
-
-        <article className="message-panel">
-          <p className="eyebrow">おうちの人から</p>
-          <p className="message-copy">分数の問題を 1 問だけ確認してみたいです。</p>
-          <div className="inline-actions">
-            <button
-              className="small-button"
-              type="button"
-              onClick={() => props.setNotice("確認問題を最初に表示します。")}
-            >
-              やってみる
-            </button>
-            <button
-              className="link-button"
-              type="button"
-              onClick={() => props.setNotice("あとで確認できるようにしました。")}
-            >
-              あとで
-            </button>
-            <button
-              className="link-button"
-              type="button"
-              onClick={() => props.setNotice("今は解きたくないと伝えました。")}
-            >
-              今はやらない
-            </button>
-          </div>
+          <p className="eyebrow">こんにちは、
+             <select 
+                value={props.currentLearnerId} 
+                onChange={e => props.setCurrentLearnerId(e.target.value)}
+                style={{background: 'transparent', border: 'none', fontWeight: 'bold', fontSize: 'inherit', color: 'inherit'}}
+              >
+                {props.learners.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {props.learners.length === 0 && <option value={props.currentLearnerId}>{props.currentLearnerId}</option>}
+              </select>
+          </p>
+          <h1>{props.problem.subject}</h1>
+          <p>出題元: {props.questionBankSource}</p>
         </article>
 
         {props.notice && <p className="notice wide">{props.notice}</p>}
@@ -87,23 +61,16 @@ export function VariantB(props: LearnerProps) {
             <button
               className="ghost-button"
               type="button"
-              onClick={() => props.setNotice("解説を表示する画面へ進みます。")}
+              onClick={props.onDontKnow}
             >
               分からない
             </button>
             <button
               className="secondary-button"
               type="button"
-              onClick={() => props.setNotice("今日はここまで。取り組んだ内容を記録しました。")}
+              onClick={props.onDispute}
             >
-              今日はここまで
-            </button>
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => props.setNotice("大人と確認する項目へ追加しました。")}
-            >
-              大人と確認する
+              答えが違うと思う
             </button>
           </aside>
         </article>

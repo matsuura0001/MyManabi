@@ -242,13 +242,12 @@ fn validate_question(question: &Question) -> Result<(), String> {
     if question.unit_id.trim().is_empty() {
         return Err("question unitId must not be empty".to_owned());
     }
-    if question.skill_ids.is_empty()
-        || question
-            .skill_ids
-            .iter()
-            .any(|skill| skill.trim().is_empty())
+    if question
+        .skill_ids
+        .iter()
+        .any(|skill| skill.trim().is_empty())
     {
-        return Err("question skillIds must not be empty".to_owned());
+        return Err("question skillIds must not contain empty strings".to_owned());
     }
     if !matches!(
         question.question_type.as_str(),

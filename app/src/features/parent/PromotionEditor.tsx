@@ -44,10 +44,11 @@ export function PromotionEditor({
           />
         </label>
         <label>
-          <span>Skill IDs（カンマ区切り）</span>
+          <span>Skill IDs</span>
           <input
-            value={form.skillIds}
-            onChange={(e) => update({ skillIds: e.currentTarget.value })}
+            disabled
+            value="（単元から自動付与されます）"
+            className="disabled-text"
           />
         </label>
         <label>
@@ -56,13 +57,13 @@ export function PromotionEditor({
             value={form.questionType}
             onChange={(e) => update({ questionType: e.currentTarget.value })}
           >
-            <option value="free-text">free-text</option>
-            <option value="kanji">kanji</option>
-            <option value="numeric">numeric</option>
-            <option value="multiple-choice">multiple-choice</option>
-            <option value="word-problem">word-problem</option>
-            <option value="handwriting">handwriting</option>
-            <option value="speech">speech</option>
+            <option value="free-text">自由記述（free-text）</option>
+            <option value="kanji">漢字（kanji）</option>
+            <option value="numeric">数値回答（numeric）</option>
+            <option value="multiple-choice">選択式（multiple-choice）</option>
+            <option value="word-problem">文章題（word-problem）</option>
+            <option value="handwriting">手書き（handwriting）</option>
+            <option value="speech">音声（speech）</option>
           </select>
         </label>
         <label>

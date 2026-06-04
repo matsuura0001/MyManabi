@@ -49,8 +49,14 @@ pub struct CandidateResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub region_image_path: Option<String>,
     pub ocr_text: String,
-    pub confidence: f64,
+    pub confidence: f32,
+    #[serde(rename = "suggestedQuestionType")]
     pub suggested_question_type: String,
+    #[serde(rename = "suggestedSubject", skip_serializing_if = "Option::is_none")]
+    pub suggested_subject: Option<String>,
+    #[serde(rename = "suggestedUnitId", skip_serializing_if = "Option::is_none")]
+    pub suggested_unit_id: Option<String>,
+    #[serde(rename = "reviewStatus")]
     pub review_status: String,
 }
 
@@ -239,6 +245,79 @@ pub async fn rasterize_source_document(
     }
 
     load_extraction_result(data_dir, source_document_id)
+}
+
+/// Run AI-OCR extraction for a rasterized source document.
+pub async fn extract_source_document_with_ai(
+    data_dir: &Path,
+    source_document_id: &str,
+    options: &ExtractionOptions,
+) -> Result<ExtractionResult, String> {
+    // 1. Rasterize first (if not already done) to get page images
+    let mut result = rasterize_source_document(data_dir, source_document_id, options).await?;
+
+    let prompt = "Extract all math or text problems from these pages. Return a JSON array of objects, each containing: 'page' (the integer page number provided in the prompt), 'ocr_text' (the extracted text/math), 'confidence' (0.0 to 1.0 estimate of your reading confidence), 'suggested_question_type' (e.g. 'numeric', 'free-text', 'choice'), 'suggested_subject' (e.g. '算数', '国語', '理科', '社会', '英語'), and 'suggested_unit_id' (a short english identifier for the topic, e.g. 'fractions-addition', 'kanji', 'geometry').";
+
+    let mut image_parts = Vec::new();
+    for page in &result.pages {
+        let image_path = data_dir.join(&page.image_path);
+        let image_bytes = std::fs::read(&image_path)
+            .map_err(|e| format!("failed to read page image {}: {}", image_path.display(), e))?;
+        use base64::Engine;
+        let base64_image = base64::engine::general_purpose::STANDARD.encode(&image_bytes);
+        
+        image_parts.push(serde_json::json!({ "text": format!("Page {}:", page.page) }));
+        image_parts.push(serde_json::json!({
+            "inline_data": {
+                "mime_type": "image/png",
+                "data": base64_image
+            }
+        }));
+    }
+
+    let raw_json = crate::ai_client::extract_with_ai(data_dir, image_parts, prompt).await?;
+    let items = raw_json.as_array().ok_or("AI did not return a JSON array")?;
+
+    let mut all_candidates = Vec::new();
+    for item in items {
+        let text = item["ocr_text"].as_str().unwrap_or("").trim().to_string();
+        if text.is_empty() {
+            continue;
+        }
+        let confidence = item["confidence"].as_f64().unwrap_or(1.0);
+        let q_type = item["suggested_question_type"].as_str().unwrap_or("free-text").to_string();
+        let subject = item["suggested_subject"].as_str().map(|s| s.to_string());
+        let unit_id = item["suggested_unit_id"].as_str().map(|s| s.to_string());
+        let page_num = item["page"].as_u64().unwrap_or(1) as u32;
+
+        let candidate_id = format!("{}-p{:03}-c{:02}", source_document_id, page_num, all_candidates.len() + 1);
+
+        all_candidates.push(CandidateResult {
+            candidate_id,
+            page: page_num,
+            item_label: None,
+            region: RegionRatio { x: 0.0, y: 0.0, width: 1.0, height: 1.0 },
+            region_image_path: None,
+            ocr_text: text,
+            confidence: confidence as f32,
+            suggested_question_type: q_type,
+            suggested_subject: subject,
+            suggested_unit_id: unit_id,
+            review_status: "draft".to_string(),
+        });
+    }
+
+    result.candidates = all_candidates;
+    result.metrics.extraction_route = "ai-ocr".to_string();
+    result.metrics.candidate_questions = result.candidates.len() as u32;
+
+    let path = extraction_result_path(data_dir, source_document_id)?;
+    let bytes = serde_json::to_vec_pretty(&result)
+        .map_err(|e| format!("serialize extraction result: {}", e))?;
+    std::fs::write(&path, bytes)
+        .map_err(|e| format!("write extraction result {}: {}", path.display(), e))?;
+
+    Ok(result)
 }
 
 /// Return the local review artifact path so the UI can make DATA_DIR storage visible.
@@ -442,6 +521,68 @@ pub async fn reextract_candidate_region(
         .map_err(|error| format!("serialize extraction result: {error}"))?;
     std::fs::write(&path, bytes)
         .map_err(|error| format!("write extraction result {}: {error}", path.display()))?;
+
+    Ok(result)
+}
+
+/// Re-extract a single candidate region using AI-OCR.
+pub async fn reextract_candidate_with_ai(
+    data_dir: &Path,
+    source_document_id: &str,
+    candidate_id: &str,
+) -> Result<ExtractionResult, String> {
+    let mut result = load_extraction_result(data_dir, source_document_id)?;
+    let candidate = result.candidates.iter().find(|c| c.candidate_id == candidate_id)
+        .ok_or_else(|| format!("candidate not found: {}", candidate_id))?;
+    
+    // Determine the image path to use
+    let image_path = if let Some(ref rp) = candidate.region_image_path {
+        data_dir.join(rp)
+    } else {
+        // Fallback to page image if region image isn't saved
+        let page_result = result.pages.iter().find(|p| p.page == candidate.page)
+            .ok_or_else(|| format!("page {} not found", candidate.page))?;
+        data_dir.join(&page_result.image_path)
+    };
+
+    let image_bytes = std::fs::read(&image_path)
+        .map_err(|e| format!("failed to read candidate image {}: {}", image_path.display(), e))?;
+    use base64::Engine;
+    use base64::engine::general_purpose;
+    let base64_image = general_purpose::STANDARD.encode(&image_bytes);
+
+    let prompt = "Extract the math or text problem from this image exactly as written. Return a JSON object with: 'ocr_text' (string) and 'confidence' (number).";
+
+    let image_parts = vec![serde_json::json!({
+        "inline_data": {
+            "mime_type": "image/png",
+            "data": base64_image
+        }
+    })];
+
+    let json_res = crate::ai_client::extract_with_ai(data_dir, image_parts, prompt).await?;
+    
+    let updated = CandidateResult {
+        candidate_id: candidate_id.to_string(),
+        page: candidate.page,
+        item_label: candidate.item_label.clone(),
+        region: candidate.region.clone(),
+        region_image_path: candidate.region_image_path.clone(),
+        ocr_text: json_res["ocr_text"].as_str().unwrap_or(&candidate.ocr_text).to_string(),
+        confidence: json_res["confidence"].as_f64().map(|c| c as f32).unwrap_or(candidate.confidence),
+        suggested_question_type: candidate.suggested_question_type.clone(),
+        suggested_subject: candidate.suggested_subject.clone(),
+        suggested_unit_id: candidate.suggested_unit_id.clone(),
+        review_status: candidate.review_status.clone(),
+    };
+
+    result = merge_reextracted_candidate(result, candidate_id, updated)?;
+
+    let path = extraction_result_path(data_dir, source_document_id)?;
+    let bytes = serde_json::to_vec_pretty(&result)
+        .map_err(|e| format!("serialize extraction result: {}", e))?;
+    std::fs::write(&path, bytes)
+        .map_err(|e| format!("write extraction result {}: {}", path.display(), e))?;
 
     Ok(result)
 }

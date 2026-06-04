@@ -4,16 +4,27 @@ import type { LearnerProps } from "./types";
 import { AnswerEvidence, answerLabel, QuestionPresentation, responseLabel } from "./QuestionMedia";
 
 export function VariantA(props: LearnerProps) {
+  const currentLearner = props.learners.find(l => l.id === props.currentLearnerId);
+
   return (
     <main className="app-shell focus-shell">
       <Header view={props.view} setView={props.setView} />
       <section className="focus-stage">
         <div className="learner-strip">
-          <span className="avatar">あ</span>
+          <span className="avatar">{currentLearner ? currentLearner.name.charAt(0) : "？"}</span>
           <div>
-            <strong>あおい / 3 もんめ</strong>
+            <strong>
+              <select 
+                value={props.currentLearnerId} 
+                onChange={e => props.setCurrentLearnerId(e.target.value)}
+                style={{background: 'transparent', border: 'none', fontWeight: 'bold', fontSize: '1rem', color: 'inherit'}}
+              >
+                {props.learners.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {props.learners.length === 0 && <option value={props.currentLearnerId}>{props.currentLearnerId}</option>}
+              </select>
+            </strong>
           </div>
-          <span className="soft-chip">あと 2 もん</span>
+          <span className="soft-chip">出題元: {props.questionBankSource}</span>
         </div>
 
         {props.notice && <p className="notice">{props.notice}</p>}
@@ -47,7 +58,7 @@ export function VariantA(props: LearnerProps) {
                 <button
                   className="secondary-button"
                   type="button"
-                  onClick={() => props.setNotice("答えがちがうと思う、と記録しました。")}
+                  onClick={props.onDispute}
                 >
                   答えがちがうと思う
                 </button>
@@ -87,7 +98,7 @@ export function VariantA(props: LearnerProps) {
               <button
                 className="ghost-button answer-submit"
                 type="button"
-                onClick={() => props.setNotice("解説を表示する画面へ進みます。")}
+                onClick={props.onDontKnow}
               >
                 分からない
               </button>
@@ -103,31 +114,14 @@ export function VariantA(props: LearnerProps) {
               <button
                 className="secondary-button"
                 type="button"
-                onClick={() => props.setNotice("答えがちがうと思う、と記録しました。")}
+                onClick={props.onDispute}
               >
                 答えがちがうと思う
               </button>
             </div>
           )}
 
-          <div className="secondary-actions">
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => props.setNotice("今日はここまで。3 問取り組みました。")}
-            >
-              今日はここまで
-            </button>
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => props.setNotice("大人と確認する項目へ追加しました。")}
-            >
-              大人と確認する
-            </button>
-          </div>
         </article>
-        <small className="question-bank-source">出題元: {props.questionBankSource}</small>
       </section>
     </main>
   );

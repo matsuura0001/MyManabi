@@ -10,6 +10,19 @@ import { ImportHistory } from "./ImportHistory";
 import { ExtractionReview } from "./ExtractionReview";
 import { RegionPlanSelector } from "./RegionPlanSelector";
 
+interface AiProviderConfig {
+  provider: string;
+  apiKey: string;
+  model: string;
+  baseUrl: string;
+}
+
+interface AiSettings {
+  activeProvider: string;
+  providers: AiProviderConfig[];
+}
+
+
 export function ParentConsole({
   variant,
   setView,
@@ -20,6 +33,7 @@ export function ParentConsole({
   const [suggestion, setSuggestion] = useState("分数のたし算 / 通分を含む問題");
   const [sent, setSent] = useState(false);
   const [pdfUrl, setPdfUrl] = useState("");
+  const [useAiOcr, setUseAiOcr] = useState(false);
   const [importedDocument, setImportedDocument] = useState<SourceDocument | null>(null);
   const [sourceDocuments, setSourceDocuments] = useState<SourceDocument[]>([]);
   const [showImportHistory, setShowImportHistory] = useState(false);
@@ -30,9 +44,74 @@ export function ParentConsole({
   const [extracting, setExtracting] = useState(false);
   const isSidebar = variant === "B";
 
+  const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
+
   useEffect(() => {
     loadSourceDocuments();
+    loadAiSettings();
   }, []);
+
+  async function loadAiSettings() {
+    try {
+      setAiSettings(await invoke<AiSettings>("get_ai_settings"));
+    } catch (caught) {
+      console.error("Failed to load AI settings", caught);
+    }
+  }
+
+  async function handleApiKeyChange(providerName: string, apiKey: string) {
+    if (!aiSettings) return;
+    const nextProviders = aiSettings.providers.map((p) =>
+      p.provider === providerName ? { ...p, apiKey } : p
+    );
+    const newSettings = { ...aiSettings, providers: nextProviders };
+    try {
+      await invoke("save_ai_settings", { settings: newSettings });
+      setAiSettings(newSettings);
+    } catch (caught) {
+      setImportError(String(caught));
+    }
+  }
+
+
+  async function handleModelChange(providerName: string, model: string) {
+    if (!aiSettings) return;
+    const nextProviders = aiSettings.providers.map((p) =>
+      p.provider === providerName ? { ...p, model } : p
+    );
+    const newSettings = { ...aiSettings, providers: nextProviders };
+    try {
+      await invoke("save_ai_settings", { settings: newSettings });
+      setAiSettings(newSettings);
+    } catch (caught) {
+      setImportError(String(caught));
+    }
+  }
+
+  async function handleBaseUrlChange(providerName: string, baseUrl: string) {
+    if (!aiSettings) return;
+    const nextProviders = aiSettings.providers.map((p) =>
+      p.provider === providerName ? { ...p, baseUrl } : p
+    );
+    const newSettings = { ...aiSettings, providers: nextProviders };
+    try {
+      await invoke("save_ai_settings", { settings: newSettings });
+      setAiSettings(newSettings);
+    } catch (caught) {
+      setImportError(String(caught));
+    }
+  }
+
+  async function handleActiveProviderChange(activeProvider: string) {
+    if (!aiSettings) return;
+    const newSettings = { ...aiSettings, activeProvider };
+    try {
+      await invoke("save_ai_settings", { settings: newSettings });
+      setAiSettings(newSettings);
+    } catch (caught) {
+      setImportError(String(caught));
+    }
+  }
 
   async function loadSourceDocuments() {
     try {
@@ -96,7 +175,8 @@ export function ParentConsole({
     setExtractionResult(null);
     setExtractionPath(null);
     try {
-      const result = await invoke<ExtractionResult>("extract_source_document", {
+      const command = useAiOcr ? "extract_source_document_with_ai" : "extract_source_document";
+      const result = await invoke<ExtractionResult>(command, {
         sourceDocumentId: importedDocument.id,
       });
       const path = await invoke<string>("extraction_result_path", {
@@ -266,47 +346,89 @@ export function ParentConsole({
               selectedDocumentId={importedDocument?.id ?? null}
             />
           )}
-          <details className="url-import">
-            <summary>公開 URL の PDF を登録</summary>
-            <div className="import-row">
-              <input
-                aria-label="PDF の URL"
-                placeholder="https://.../worksheet.pdf"
-                type="url"
-                value={pdfUrl}
-                onChange={(event) => setPdfUrl(event.currentTarget.value)}
-              />
-              <button
-                className="small-button"
-                disabled={importing || pdfUrl.trim() === ""}
-                type="button"
-                onClick={importPdf}
-              >
-                {importing ? "取り込み中..." : "PDF を取り込む"}
-              </button>
-            </div>
-          </details>
+
+          {aiSettings && (
+            <details className="url-import">
+              <summary>AI-OCR 設定 (プロバイダ / モデル選択)</summary>
+              <div style={{ padding: '0.5rem 0', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div>
+                  <label style={{ fontWeight: 'bold' }}>使用するプロバイダ:</label>
+                  <select
+                    value={aiSettings.activeProvider}
+                    onChange={(e) => handleActiveProviderChange(e.target.value)}
+                    style={{ marginLeft: '0.5rem', padding: '0.2rem' }}
+                  >
+                    {aiSettings.providers.map(p => (
+                      <option key={p.provider} value={p.provider}>{p.provider}</option>
+                    ))}
+                  </select>
+                </div>
+                {aiSettings.providers.map(p => (
+                  <div key={p.provider} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.75rem', border: '1px solid var(--border-color, #ccc)', borderRadius: '6px', opacity: aiSettings.activeProvider === p.provider ? 1 : 0.5 }}>
+                    <div style={{ fontWeight: 'bold' }}>{p.provider}</div>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <label style={{ width: '80px', fontSize: '0.9rem' }}>API Key:</label>
+                      <input
+                        type="password"
+                        placeholder={`${p.provider} の API Key`}
+                        value={p.apiKey}
+                        onChange={(e) => handleApiKeyChange(p.provider, e.target.value)}
+                        style={{ flex: 1 }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <label style={{ width: '80px', fontSize: '0.9rem' }}>モデル名:</label>
+                      <input
+                        type="text"
+                        placeholder="例: gemini-1.5-flash"
+                        value={p.model}
+                        onChange={(e) => handleModelChange(p.provider, e.target.value)}
+                        style={{ flex: 1 }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <label style={{ width: '80px', fontSize: '0.9rem' }}>Base URL:</label>
+                      <input
+                        type="url"
+                        placeholder="API のベース URL"
+                        value={p.baseUrl}
+                        onChange={(e) => handleBaseUrlChange(p.provider, e.target.value)}
+                        style={{ flex: 1 }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+
           {importedDocument && (
             <div className="import-success">
               <p>
                 {importedDocument.originalFileName} を保存しました。種類: {importedDocument.kind}
               </p>
-              <button
-                className="small-button"
-                disabled={extracting}
-                type="button"
-                onClick={rasterizeImportedSource}
-              >
-                {extracting ? "処理中..." : "ページ画像を表示"}
-              </button>
-              <button
-                className="secondary-button"
-                disabled={extracting}
-                type="button"
-                onClick={extractImportedSource}
-              >
-                {extracting ? "候補を抽出中..." : "自動 OCR で候補を抽出"}
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', margin: '0.5rem 0' }}>
+                <button
+                  className="small-button"
+                  disabled={extracting}
+                  type="button"
+                  onClick={rasterizeImportedSource}
+                >
+                  {extracting ? "処理中..." : "ページ画像を表示"}
+                </button>
+                <button
+                  className="secondary-button"
+                  disabled={extracting}
+                  type="button"
+                  onClick={extractImportedSource}
+                >
+                  {extracting ? "候補を抽出中..." : "自動 OCR で候補を抽出"}
+                </button>
+                <label style={{ fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.25rem', whiteSpace: 'nowrap' }}>
+                  <input type="checkbox" checked={useAiOcr} onChange={e => setUseAiOcr(e.target.checked)} />
+                  複雑なレイアウト向け AI-OCR を優先
+                </label>
+              </div>
             </div>
           )}
           {importedDocument && extractionResult && extractionResult.pages.length > 0 && (

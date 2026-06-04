@@ -8,11 +8,11 @@ import { RegionEditModal } from "./RegionEditModal";
 function defaultPromotionForm(candidate: ExtractionCandidate, ocrText: string): PromotionForm {
   return {
     questionId: `imported-${candidate.candidateId}`,
-    subject: "国語",
-    unitId: "kanji-import",
-    skillIds: "kanji-writing",
-    questionType: candidate.suggestedQuestionType === "unknown" ? "free-text" : candidate.suggestedQuestionType,
-    title: `ページ ${candidate.page} の取り込み問題`,
+    subject: candidate.suggestedSubject || "",
+    unitId: candidate.suggestedUnitId || "",
+    skillIds: "",
+    questionType: candidate.suggestedQuestionType || "numeric",
+    title: "",
     body: ocrText,
     note: "OCR 候補から昇格",
     answerValue: "",
@@ -40,6 +40,7 @@ export function ExtractionReview({
   const [promotionForms, setPromotionForms] = useState<Record<string, PromotionForm>>({});
   const [promotingCandidateId, setPromotingCandidateId] = useState<string | null>(null);
   const [regionEditCandidate, setRegionEditCandidate] = useState<ExtractionCandidate | null>(null);
+  const [candidateFeedback, setCandidateFeedback] = useState<Record<string, { type: 'success' | 'error', message: string }>>({});
 
   // Single-pass count instead of three separate .filter() calls
   const counts = result.candidates.reduce(
@@ -54,7 +55,7 @@ export function ExtractionReview({
 
   function promotionFormFor(candidate: ExtractionCandidate): PromotionForm {
     return (
-      promotionForms[candidate.candidateId] ??
+      promotionForms[candidate.candidateId] ||
       defaultPromotionForm(candidate, candidateTexts[candidate.candidateId] ?? candidate.ocrText)
     );
   }
@@ -88,6 +89,43 @@ export function ExtractionReview({
       );
     } catch (caught) {
       setImportError(String(caught));
+    } finally {
+      setReviewingCandidateId(null);
+    }
+  }
+
+  async function reextractCandidateWithAi(candidate: ExtractionCandidate) {
+    setReviewingCandidateId(candidate.candidateId);
+    setCandidateFeedback((current) => {
+      const next = { ...current };
+      delete next[candidate.candidateId];
+      return next;
+    });
+    setImportError(null);
+    try {
+      const updatedResult = await invoke<ExtractionResult>("reextract_candidate_with_ai", {
+        sourceDocumentId,
+        candidateId: candidate.candidateId,
+      });
+      setResult(updatedResult);
+      const updatedCandidate = updatedResult.candidates.find(
+        (c) => c.candidateId === candidate.candidateId
+      );
+      if (updatedCandidate) {
+        setCandidateTexts((current) => ({
+          ...current,
+          [candidate.candidateId]: updatedCandidate.ocrText,
+        }));
+        setCandidateFeedback((current) => ({
+          ...current,
+          [candidate.candidateId]: { type: 'success', message: 'AI による再読み込みが完了しました。' }
+        }));
+      }
+    } catch (caught) {
+      setCandidateFeedback((current) => ({
+        ...current,
+        [candidate.candidateId]: { type: 'error', message: String(caught) }
+      }));
     } finally {
       setReviewingCandidateId(null);
     }
@@ -213,7 +251,28 @@ export function ExtractionReview({
                 >
                   領域を再指定
                 </button>
+                <button
+                  className="outline-button"
+                  disabled={reviewingCandidateId === candidate.candidateId}
+                  type="button"
+                  onClick={() => reextractCandidateWithAi(candidate)}
+                >
+                  {reviewingCandidateId === candidate.candidateId ? "処理中..." : "AIで読み直す"}
+                </button>
               </div>
+              {candidateFeedback[candidate.candidateId] && (
+                <div style={{
+                  padding: '0.5rem',
+                  marginTop: '0.5rem',
+                  fontSize: '0.9rem',
+                  borderRadius: '4px',
+                  backgroundColor: candidateFeedback[candidate.candidateId].type === 'error' ? '#fdecea' : '#edf7ed',
+                  color: candidateFeedback[candidate.candidateId].type === 'error' ? '#d32f2f' : '#1e4620',
+                  border: `1px solid ${candidateFeedback[candidate.candidateId].type === 'error' ? '#f5c2c7' : '#c3e6cb'}`
+                }}>
+                  {candidateFeedback[candidate.candidateId].message}
+                </div>
+              )}
               {candidate.reviewStatus === "adult-approved" ? (
                 <PromotionEditor
                   candidate={candidate}

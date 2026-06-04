@@ -1,5 +1,6 @@
 import type { Question } from "../../domain/question";
 import type { FeedbackStyle, View } from "../../lib/variant";
+import type { Learner } from "../../domain/learner";
 
 export type LearnerProps = {
   answer: string;
@@ -14,4 +15,9 @@ export type LearnerProps = {
   setView: (view: View) => void;
   submitAnswer: () => void;
   moveToNextProblem: (message: string) => void;
+  onDontKnow: () => void;
+  onDispute: () => void;
+  learners: Learner[];
+  currentLearnerId: string;
+  setCurrentLearnerId: (id: string) => void;
 };

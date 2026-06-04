@@ -1,7 +1,10 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 pub mod codex;
+pub mod domain;
+pub mod learning_event;
 pub mod content_index;
 pub mod ocr_worker;
+pub mod ai_client;
 pub mod question_bank;
 pub mod selection;
 pub mod source_document;
@@ -9,6 +12,9 @@ pub mod source_document;
 use codex::SpikeOutcome;
 use question_bank::{Answer, Question, Source};
 use serde::Deserialize;
+use domain::Learner;
+use selection::QuestionQueueItem;
+use learning_event::LearningEvent;
 
 /// Connectivity spike: drive `codex app-server` for one text turn and return
 /// the signed-in account plus the generated text.
@@ -38,6 +44,45 @@ fn load_question_bank_for_notes(
     let question_ids = content_index::question_ids_for_notes(&notes, &note_ids);
     let questions = question_bank::load_approved_questions_by_ids(&data_dir, &question_ids)?;
     Ok(selection::rank_questions_by_weight(questions, |_| 0))
+}
+
+#[tauri::command]
+fn list_learners(data_dir: Option<String>) -> Result<Vec<Learner>, String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    domain::list_learners(&data_dir)
+}
+
+#[tauri::command]
+fn get_question_queue(
+    data_dir: Option<String>,
+    learner_id: String,
+) -> Result<Vec<QuestionQueueItem>, String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    let questions = question_bank::load_approved_questions(&data_dir)?;
+    let ranked = selection::rank_questions_by_weight(questions, |_| 0);
+    Ok(selection::build_question_queue(&learner_id, ranked))
+}
+
+#[tauri::command]
+fn save_learning_event(
+    data_dir: Option<String>,
+    event: LearningEvent,
+) -> Result<(), String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    learning_event::record_learning_event(&data_dir, &event)?;
+    
+    // Simplistic state update
+    let mut state = domain::load_learner_question_state(&data_dir, &event.learner_id, &event.question)?;
+    if event.response.r#type != "none" {
+        state.attempts += 1;
+        state.last_presented_at = Some(event.occurred_at);
+    }
+    if event.flags.disputed {
+        state.disputed_count += 1;
+    }
+    domain::save_learner_question_state(&data_dir, &state)?;
+    
+    Ok(())
 }
 
 fn resolve_data_dir(data_dir: Option<String>) -> Result<std::path::PathBuf, String> {
@@ -100,6 +145,39 @@ async fn rasterize_source_document(
     let data_dir = resolve_data_dir(data_dir)?;
     let options = options.unwrap_or_default();
     ocr_worker::rasterize_source_document(&data_dir, &source_document_id, &options).await
+}
+
+#[tauri::command]
+async fn extract_source_document_with_ai(
+    data_dir: Option<String>,
+    source_document_id: String,
+    options: Option<ocr_worker::ExtractionOptions>,
+) -> Result<ocr_worker::ExtractionResult, String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    let options = options.unwrap_or_default();
+    ocr_worker::extract_source_document_with_ai(&data_dir, &source_document_id, &options).await
+}
+
+#[tauri::command]
+async fn reextract_candidate_with_ai(
+    data_dir: Option<String>,
+    source_document_id: String,
+    candidate_id: String,
+) -> Result<ocr_worker::ExtractionResult, String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    ocr_worker::reextract_candidate_with_ai(&data_dir, &source_document_id, &candidate_id).await
+}
+
+#[tauri::command]
+fn get_ai_settings(data_dir: Option<String>) -> Result<ai_client::AiSettings, String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    ai_client::get_ai_settings(&data_dir)
+}
+
+#[tauri::command]
+fn save_ai_settings(data_dir: Option<String>, settings: ai_client::AiSettings) -> Result<(), String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    ai_client::save_ai_settings(&data_dir, &settings)
 }
 
 #[tauri::command]
@@ -259,13 +337,20 @@ pub fn run() {
             import_source_from_path,
             list_source_documents,
             extract_source_document,
+            extract_source_document_with_ai,
             rasterize_source_document,
             extraction_result_path,
             load_extraction_result,
             review_extraction_candidate,
             promote_extraction_candidate,
             reextract_candidate_region,
-            ocr_source_region
+            reextract_candidate_with_ai,
+            ocr_source_region,
+            list_learners,
+            get_question_queue,
+            save_learning_event,
+            get_ai_settings,
+            save_ai_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
