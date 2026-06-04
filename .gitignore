@@ -4,6 +4,8 @@
 /data/
 /learners/
 /content/
+# 研究ノート・教材原本（公開リポジトリ外で管理する）
+docs/research/
 
 # --- Obsidian（ローカル設定） ---
 .obsidian/
