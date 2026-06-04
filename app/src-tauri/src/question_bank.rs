@@ -15,9 +15,16 @@ pub struct Question {
     pub skill_ids: Vec<String>,
     pub question_type: String,
     pub title: String,
-    pub body: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<Presentation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_response: Option<ExpectedResponse>,
     pub note: String,
     pub answer: Answer,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_mapping: Option<SourceMapping>,
     pub source: Source,
     pub review_status: String,
     pub purposes: Vec<String>,
@@ -29,7 +36,79 @@ pub struct Question {
 #[serde(rename_all = "camelCase")]
 pub struct Answer {
     pub r#type: String,
-    pub value: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_value: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<RegionRatio>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rubric: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Presentation {
+    pub r#type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<RegionRatio>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_transcript: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExpectedResponse {
+    pub r#type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rubric: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceMapping {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question_region_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answer_region_id: Option<String>,
+    pub relation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegionRatio {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -189,11 +268,16 @@ fn validate_question(question: &Question) -> Result<(), String> {
     if question.title.trim().is_empty() {
         return Err("question title must not be empty".to_owned());
     }
-    if question.body.trim().is_empty() {
-        return Err("question body must not be empty".to_owned());
+    let has_body = question
+        .body
+        .as_deref()
+        .is_some_and(|body| !body.trim().is_empty());
+    if !has_body && question.presentation.is_none() {
+        return Err("question must have body text or presentation".to_owned());
     }
-    if question.answer.value.trim().is_empty() {
-        return Err("question answer must not be empty".to_owned());
+    validate_answer(&question.answer)?;
+    if let Some(presentation) = &question.presentation {
+        validate_presentation(presentation)?;
     }
     if question.review_status != "adult-approved" {
         return Err("promoted question must be adult-approved".to_owned());
@@ -207,6 +291,84 @@ fn validate_question(question: &Question) -> Result<(), String> {
         .any(|purpose| !matches!(purpose.as_str(), "learning" | "review" | "assessment"))
     {
         return Err("question purposes include an unsupported value".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_answer(answer: &Answer) -> Result<(), String> {
+    match answer.r#type.as_str() {
+        "exact-text" | "numeric" | "choice" | "ai-assisted" => {
+            if answer
+                .value
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+            {
+                return Err("text answer value must not be empty".to_owned());
+            }
+        }
+        "source-region" => {
+            if answer.document_id.as_deref().is_none_or(str::is_empty)
+                || answer.page.is_none()
+                || answer.region.is_none()
+            {
+                return Err("source-region answer requires documentId, page and region".to_owned());
+            }
+        }
+        "image" | "exemplar-image" => {
+            if answer.image_path.as_deref().is_none_or(str::is_empty)
+                && answer.media_id.as_deref().is_none_or(str::is_empty)
+            {
+                return Err("image answer requires imagePath or mediaId".to_owned());
+            }
+        }
+        "audio" | "exemplar-audio" => {
+            if answer.media_id.as_deref().is_none_or(str::is_empty) {
+                return Err("audio answer requires mediaId".to_owned());
+            }
+        }
+        "manual-review" => {}
+        other => return Err(format!("unsupported answer type: {other}")),
+    }
+    Ok(())
+}
+
+fn validate_presentation(presentation: &Presentation) -> Result<(), String> {
+    match presentation.r#type.as_str() {
+        "text" => {
+            if presentation
+                .text
+                .as_deref()
+                .is_none_or(|text| text.trim().is_empty())
+            {
+                return Err("text presentation requires text".to_owned());
+            }
+        }
+        "source-region" => {
+            if presentation
+                .document_id
+                .as_deref()
+                .is_none_or(str::is_empty)
+                || presentation.page.is_none()
+                || presentation.region.is_none()
+            {
+                return Err(
+                    "source-region presentation requires documentId, page and region".to_owned(),
+                );
+            }
+        }
+        "image" => {
+            if presentation.image_path.as_deref().is_none_or(str::is_empty)
+                && presentation.media_id.as_deref().is_none_or(str::is_empty)
+            {
+                return Err("image presentation requires imagePath or mediaId".to_owned());
+            }
+        }
+        "audio" => {
+            if presentation.media_id.as_deref().is_none_or(str::is_empty) {
+                return Err("audio presentation requires mediaId".to_owned());
+            }
+        }
+        other => return Err(format!("unsupported presentation type: {other}")),
     }
     Ok(())
 }
@@ -323,12 +485,24 @@ mod tests {
             skill_ids: vec!["kanji-writing".to_owned()],
             question_type: "kanji".to_owned(),
             title: "漢字を書こう".to_owned(),
-            body: "山".to_owned(),
+            body: Some("山".to_owned()),
+            presentation: None,
+            expected_response: None,
             note: "".to_owned(),
             answer: Answer {
                 r#type: "exact-text".to_owned(),
-                value: "山".to_owned(),
+                value: Some("山".to_owned()),
+                text_value: None,
+                document_id: None,
+                page: None,
+                region: None,
+                image_path: None,
+                media_id: None,
+                transcript: None,
+                rubric: None,
+                tags: Vec::new(),
             },
+            source_mapping: None,
             source: Source {
                 r#type: "imported".to_owned(),
                 template_id: None,
@@ -352,6 +526,79 @@ mod tests {
 
         assert!(!text.contains(": null"));
         assert!(text.contains("\"reviewStatus\": \"adult-approved\""));
+        fs::remove_dir_all(data_dir).expect("remove temp data dir");
+    }
+
+    #[test]
+    fn saves_source_region_question_without_body_text() {
+        let data_dir = temp_data_dir();
+        let question = Question {
+            id: "imported-region-1".to_owned(),
+            subject: "算数".to_owned(),
+            unit_id: "angles".to_owned(),
+            skill_ids: vec!["measure-angle".to_owned()],
+            question_type: "numeric".to_owned(),
+            title: "角度をはかろう".to_owned(),
+            body: None,
+            presentation: Some(Presentation {
+                r#type: "source-region".to_owned(),
+                text: None,
+                document_id: Some("angle-print-question".to_owned()),
+                page: Some(1),
+                region: Some(RegionRatio {
+                    x: 0.1,
+                    y: 0.2,
+                    width: 0.3,
+                    height: 0.2,
+                }),
+                image_path: None,
+                media_id: None,
+                transcript: None,
+                show_transcript: None,
+            }),
+            expected_response: Some(ExpectedResponse {
+                r#type: "numeric".to_owned(),
+                rubric: None,
+            }),
+            note: "".to_owned(),
+            answer: Answer {
+                r#type: "source-region".to_owned(),
+                value: None,
+                text_value: Some("90°".to_owned()),
+                document_id: Some("angle-print-answer".to_owned()),
+                page: Some(1),
+                region: Some(RegionRatio {
+                    x: 0.1,
+                    y: 0.2,
+                    width: 0.3,
+                    height: 0.2,
+                }),
+                image_path: None,
+                media_id: None,
+                transcript: None,
+                rubric: None,
+                tags: vec!["right-angle".to_owned()],
+            },
+            source_mapping: Some(SourceMapping {
+                question_region_id: Some("qreg-001".to_owned()),
+                answer_region_id: Some("areg-001".to_owned()),
+                relation: "same-item".to_owned(),
+                item_label: Some("1".to_owned()),
+                confidence: Some("adult-confirmed".to_owned()),
+            }),
+            source: Source {
+                r#type: "imported".to_owned(),
+                template_id: None,
+                document_id: Some("angle-print-question".to_owned()),
+                page: Some(1),
+                item_label: Some("1".to_owned()),
+            },
+            review_status: "adult-approved".to_owned(),
+            purposes: vec!["learning".to_owned()],
+            assessment: None,
+        };
+
+        save_approved_question(&data_dir, &question).expect("save source-region question");
         fs::remove_dir_all(data_dir).expect("remove temp data dir");
     }
 }

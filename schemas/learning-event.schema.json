@@ -12,7 +12,7 @@
     "unit",
     "template_id",
     "question",
-    "answer",
+    "response",
     "grading",
     "duration_seconds",
     "flags",
@@ -20,14 +20,25 @@
     "adult_review_required"
   ],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "const": 2 },
     "event_id": { "type": "string", "minLength": 1 },
     "occurred_at": { "type": "string", "format": "date-time" },
     "learner_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
     "unit": { "type": "string", "minLength": 1 },
     "template_id": { "type": "string", "minLength": 1 },
     "question": { "type": "string", "minLength": 1 },
-    "answer": { "type": ["string", "null"] },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["text", "choice", "handwriting-image", "audio", "none"] },
+        "text": { "type": "string" },
+        "choice_id": { "type": "string", "minLength": 1 },
+        "media_id": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string" }
+      }
+    },
     "grading": {
       "type": "object",
       "additionalProperties": false,

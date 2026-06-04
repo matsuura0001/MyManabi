@@ -7,7 +7,33 @@ export type QuestionType =
   | "handwriting"
   | "speech";
 
-export type AnswerType = "exact-text" | "numeric" | "choice" | "ai-assisted";
+export type RegionRatio = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type PresentationType = "text" | "source-region" | "image" | "audio";
+export type ExpectedResponseType =
+  | "text"
+  | "numeric"
+  | "choice"
+  | "handwriting"
+  | "speech"
+  | "drawing"
+  | "parent-review";
+export type AnswerType =
+  | "exact-text"
+  | "numeric"
+  | "choice"
+  | "ai-assisted"
+  | "source-region"
+  | "image"
+  | "exemplar-image"
+  | "audio"
+  | "exemplar-audio"
+  | "manual-review";
 export type QuestionSourceType = "adult-authored" | "ai-generated" | "local-generated" | "imported";
 export type QuestionReviewStatus = "draft" | "adult-approved" | "auto-approved" | "suspended";
 export type QuestionPurpose = "learning" | "review" | "assessment";
@@ -26,11 +52,42 @@ export type Question = {
   skillIds: string[];
   questionType: QuestionType;
   title: string;
-  body: string;
+  body?: string;
+  presentation?: {
+    type: PresentationType;
+    text?: string;
+    documentId?: string;
+    page?: number;
+    region?: RegionRatio;
+    imagePath?: string;
+    mediaId?: string;
+    transcript?: string;
+    showTranscript?: boolean;
+  };
+  expectedResponse?: {
+    type: ExpectedResponseType;
+    rubric?: string;
+  };
   note: string;
   answer: {
     type: AnswerType;
-    value: string;
+    value?: string;
+    textValue?: string;
+    documentId?: string;
+    page?: number;
+    region?: RegionRatio;
+    imagePath?: string;
+    mediaId?: string;
+    transcript?: string;
+    rubric?: string;
+    tags?: string[];
+  };
+  sourceMapping?: {
+    questionRegionId?: string;
+    answerRegionId?: string;
+    relation: "same-item" | "same-page" | "manual-pair" | "answer-key";
+    itemLabel?: string;
+    confidence?: "adult-confirmed" | "heuristic" | "ai-suggested";
   };
   source: {
     type: QuestionSourceType;

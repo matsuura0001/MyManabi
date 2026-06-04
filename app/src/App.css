@@ -174,6 +174,40 @@ h2 {
   line-height: 1.7;
 }
 
+.question-media-box {
+  background: #f7f4ec;
+  border: 1px solid #ded8cc;
+  border-radius: 12px;
+  color: #53645f;
+  display: grid;
+  gap: 6px;
+  line-height: 1.6;
+  margin: 20px 0 10px;
+  padding: 14px;
+}
+
+.question-media-box strong,
+.question-media-box span {
+  overflow-wrap: anywhere;
+}
+
+.question-media-image,
+.answer-media-image {
+  border: 1px solid #ded8cc;
+  border-radius: 10px;
+  display: block;
+  max-width: 100%;
+}
+
+.question-media-image {
+  margin: 20px 0 10px;
+  max-height: 58vh;
+}
+
+.answer-media-image {
+  max-height: 220px;
+}
+
 .answer-box {
   display: flex;
   flex-direction: column;

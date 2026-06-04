@@ -11,7 +11,6 @@
     "skillIds",
     "questionType",
     "title",
-    "body",
     "note",
     "answer",
     "source",
@@ -32,14 +31,77 @@
     },
     "title": { "type": "string", "minLength": 1 },
     "body": { "type": "string", "minLength": 1 },
+    "presentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["text", "source-region", "image", "audio"] },
+        "text": { "type": "string", "minLength": 1 },
+        "documentId": { "type": "string", "minLength": 1 },
+        "page": { "type": "integer", "minimum": 1 },
+        "region": { "$ref": "#/$defs/region" },
+        "imagePath": { "type": "string", "minLength": 1 },
+        "mediaId": { "type": "string", "minLength": 1 },
+        "transcript": { "type": "string" },
+        "showTranscript": { "type": "boolean" }
+      }
+    },
+    "expectedResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["text", "numeric", "choice", "handwriting", "speech", "drawing", "parent-review"] },
+        "rubric": { "type": "string" }
+      }
+    },
     "note": { "type": "string" },
     "answer": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "value"],
+      "required": ["type"],
       "properties": {
-        "type": { "enum": ["exact-text", "numeric", "choice", "ai-assisted"] },
-        "value": { "type": "string", "minLength": 1 }
+        "type": {
+          "enum": [
+            "exact-text",
+            "numeric",
+            "choice",
+            "ai-assisted",
+            "source-region",
+            "image",
+            "exemplar-image",
+            "audio",
+            "exemplar-audio",
+            "manual-review"
+          ]
+        },
+        "value": { "type": "string", "minLength": 1 },
+        "textValue": { "type": "string", "minLength": 1 },
+        "documentId": { "type": "string", "minLength": 1 },
+        "page": { "type": "integer", "minimum": 1 },
+        "region": { "$ref": "#/$defs/region" },
+        "imagePath": { "type": "string", "minLength": 1 },
+        "mediaId": { "type": "string", "minLength": 1 },
+        "transcript": { "type": "string" },
+        "rubric": { "type": "string" },
+        "tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "sourceMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relation"],
+      "properties": {
+        "questionRegionId": { "type": "string", "minLength": 1 },
+        "answerRegionId": { "type": "string", "minLength": 1 },
+        "relation": { "enum": ["same-item", "same-page", "manual-pair", "answer-key"] },
+        "itemLabel": { "type": "string", "minLength": 1 },
+        "confidence": { "enum": ["adult-confirmed", "heuristic", "ai-suggested"] }
       }
     },
     "source": {
@@ -70,6 +132,19 @@
       "properties": {
         "equivalenceGroupId": { "type": "string", "minLength": 1 },
         "relation": { "enum": ["same-question", "isomorphic", "applied"] }
+      }
+    }
+  },
+  "$defs": {
+    "region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y": { "type": "number", "minimum": 0, "maximum": 1 },
+        "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
       }
     }
   }

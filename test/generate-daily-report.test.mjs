@@ -6,14 +6,14 @@ import test from "node:test";
 import { buildDailyReport, generateDailyReport, loadEvents } from "../src/generate-daily-report.mjs";
 
 const event = {
-  schema_version: 1,
+  schema_version: 2,
   event_id: "synthetic-test-001",
   occurred_at: "2026-05-31T09:00:00+09:00",
   learner_id: "learner-a",
   unit: "合成単元",
   template_id: "synthetic-template",
   question: "合成問題",
-  answer: null,
+  response: { type: "none", reason: "分からないが選択された" },
   grading: { result: "unknown", method: "not-graded", reason: "分からないが選択された" },
   duration_seconds: 15,
   flags: { did_not_know: true, disputed: false, anxious: true },

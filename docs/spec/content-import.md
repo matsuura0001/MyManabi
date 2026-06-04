@@ -173,7 +173,7 @@ parent_suggestion:
 
 ## 5. SourceDocument
 
-取り込み元を追跡するため、将来は SourceDocument を持たせる。
+取り込み元を追跡するため、SourceDocument を持たせる。
 
 ```yaml
 source_document:
@@ -326,7 +326,7 @@ OCR テキストだけを低コストモデルへ送る
   → それでも判断できない箇所は保護者確認へ戻す
 ```
 
-AI は Question JSON の候補を作れるが、確定しない。`reviewStatus: adult-approved` へ変更するまでは出題対象にしない。
+AI は Question JSON の候補を作れる。大人が確認したものは `adult-approved` とし、原本画像へ切り替えられるものに限り、未確認の `ai-provisional` を通常学習へ出題する余地も残す。`ai-provisional` は測定用途や確定的な理解度集計には使わない。
 
 ### 11.4 モデル選択
 
@@ -510,7 +510,7 @@ source_mapping:
 - 答えを画像だけにすると、検索、弱点分析、簡易採点が弱くなる
 - 答えをテキストだけにすると、図形、作図、書き取り、筆算、表、グラフで問題の本質を失う
 - 問題画像と答え画像の対応付けを暗黙にすると、誤対応が学習結果そのものを壊す
-- AI が画像や OCR テキストから答えを補う場合も、`adult-confirmed` になるまでは出題対象にしない
+- AI が画像や OCR テキストから答えを補う場合、未確認の正答だけを根拠に自動採点しない
 
 ### 12.4 音声を使う出題
 
@@ -627,7 +627,7 @@ PDF 原本を表示する場合も、答えの対応付けは曖昧にしない�
 ```
 
 解答 PDF が別にある場合は、解答側にもページ、領域、問題番号を持たせる。
-自動対応付けが不確かな場合は、保護者の確認が終わるまで出題対象にしない。
+自動対応付けが不確かな場合でも通常学習への出題は許容するが、子どもが答えを見たいと選んだ時だけ表示し、対応付けの確認状態を記録する。未確認の正答だけを根拠に自動採点しない。
 
 漢字の書き取りでは、端末上での自動採点を必須にしない。
 初期段階では、模範解答を表示して本人または保護者が確認する方式も許容する。
@@ -670,3 +670,286 @@ OCR は確定処理ではなく、領域候補、問題番号、解答候補を�
 - React の `Question` 型と学習者 UI を、`body` 表示だけでなく `source-region`、`image`、`audio` を描画できるようにする
 - 回答イベントに、テキスト回答、手書き画像、音声録音などの回答媒体を分けて保存できるようにする
 - 公開用統計には、問題画像、答え画像、音声、手書き回答を含めないことを検証する
+
+## 13. AI-OCR を含む取り込みドメイン
+
+### 13.1 表示方式は取り込み精度と問題成立性で選ぶ
+
+OCR 精度と、問題として出題可能かどうかは別の軸として扱う。
+
+- 高精度で大人が確認できた問題は `normalized` 表示を primary にできる
+- 不完全な取り込みでも原本領域で問題が成立する場合は、原本画像を primary にする
+- 原本画像に答えや過去の誤答が見える場合も、通常学習や復習で成立するなら利用できる
+- 動的な回答マスクは標準経路にしない。必要な場合は、事前加工した画像を別の原本として取り込む
+- 過去の誤答が見える問題を測定へ使う場合は、提示条件として記録し、難易度を自動補正しない
+
+```yaml
+presentation_condition: prior-response-visible
+```
+
+原本画像と normalized 表示が同じ問題内容を表す場合は、同じ Question ID の表示バリエーションとして保持する。子どもは表示を切り替えられ、実際に見た表示方式と切り替え履歴を記録する。
+
+```yaml
+presentation:
+  primary:
+    type: normalized
+    body: "次の角度を求めましょう。"
+  alternatives:
+    - type: source-item
+      source_item_id: worksheet-001-item-003
+```
+
+切り替えだけでは問題を停止しない。子どもが `表示がおかしい` または統合入口の `おかしい・納得できない` から報告した場合は、その Question を停止して大人の確認へ送る。
+
+### 13.2 回答は複数表現を持てる
+
+回答はテキスト、画像、音声などの複数表現を持てる。問題ごとに正となる `primary` を指定し、他の表現は模範表示、検索、採点補助、保護者確認へ使う。
+
+```yaml
+answer:
+  primary:
+    type: exact-text
+    value: "90°"
+  representations:
+    - type: source-item
+      source_item_id: worksheet-answer-001-item-003
+      role: model-answer
+      visibility: after-response
+```
+
+回答画像は基本的に子どもへ見せてよい。ただし、誤答直後に必ず表示せず、`もう一度考える`、`答えを見る`、`なぜ違うか説明して`、`納得できない` を選べるようにする。`答えを見る` は失敗ではなく学習行動として記録する。
+
+### 13.3 SourceItem
+
+PDF 内の「第 3 問」のような教材上の項目を、Question とは別の `SourceItem` として管理する。Question が無効化されても、原本上の位置、並び順、再取り込みの入口を失わないためである。
+
+```yaml
+source_item:
+  id: worksheet-001-item-003
+  document_id: worksheet-001
+  item_label: "3"
+  sequence: 12
+  regions:
+    - role: prompt
+      page: 2
+      display_order: 1
+      region:
+        x: 0.10
+        y: 0.18
+        width: 0.80
+        height: 0.12
+    - role: diagram
+      page: 2
+      display_order: 2
+      region:
+        x: 0.12
+        y: 0.32
+        width: 0.45
+        height: 0.30
+```
+
+一つの SourceItem は複数領域を持てる。領域は一枚へ事前結合せず、役割と表示順を保った複数画像として表示する。加工済み画像が必要な場合だけ、別の表示バリエーションとして追加する。
+
+一つの SourceItem から複数の Question を作れる。教材内の並びは Question に直接持たせず、教材索引側の `ContentSequence` で管理する。
+
+```yaml
+content_sequence:
+  id: worksheet-001-order
+  items:
+    - question_id: q-angle-value
+      position: 12
+      sub_position: 1
+    - question_id: q-angle-reason
+      position: 12
+      sub_position: 2
+```
+
+SourceItem の領域不備が確認された場合は、その SourceItem を使う Question をすべて停止する。
+
+### 13.4 SourceItemMapping
+
+問題用 PDF と解答用 PDF が別の場合、問題側と回答側にそれぞれ SourceItem を作り、対応付けを独立して管理する。
+
+```yaml
+source_item_mapping:
+  question_source_item_id: worksheet-001-item-003
+  answer_source_item_id: worksheet-answer-001-item-003
+  relation: answer-for
+  confidence: ai-suggested # ai-suggested / adult-confirmed
+```
+
+独立した Mapping により、Question 作成前のレビュー、同じ原本項目から作る複数 Question での再利用、AI-OCR の対応付け精度の評価ができる。初期実装は単純な `answer-for` 関係から始める。
+
+未確認の Mapping でも、子どもが `答えを見る` を選んだ場合は回答画像を表示できる。ただし、表示時の確認状態を記録し、未確認の正答だけを根拠に自動採点しない。
+
+### 13.5 ExtractionArtifact
+
+ローカル OCR、AI-OCR、テキスト抽出の生結果は、Question に直接埋め込まず `ExtractionArtifact` として分離する。
+
+```yaml
+extraction_artifact:
+  id: extraction-ai-001
+  source_item_id: worksheet-001-item-003
+  import_run_id: import-run-001
+  route: ai-ocr-image
+  raw_text: "..."
+  confidence: 0.92
+```
+
+同じ SourceItem へ複数方式を実行した場合は、採用・不採用にかかわらず成果物を残す。AI は `ai-provisional` の採用結果を自動選択でき、大人が `adult-approved` にする際は採用結果を確認する。
+
+複数の抽出成果物を組み合わせて normalized 文を作ることも許可する。ただし、参照元を記録し、原本にない自然な文章を補完する危険を前提にする。
+
+```yaml
+normalized_content:
+  body: "..."
+  derived_from_artifact_ids:
+    - extraction-local-001
+    - extraction-ai-001
+```
+
+AI が原本から読み取れない箇所を推測した場合は、観測箇所と区別する。大人が確認するまでは原本画像を primary にし、レビュー画面では推測箇所を強調する。
+
+```yaml
+normalized_content:
+  segments:
+    - text: "次の角度を"
+      confidence: observed
+    - text: "求めましょう"
+      confidence: inferred
+```
+
+大人でも読み取れない原本は `unreadable-source` として停止し、出題しない。
+
+### 13.6 承認状態と暫定出題
+
+出題可否は Question 全体の一つの承認状態で判定する。提示内容、回答、対応付けのどれかが不正なら問題として成立しない。一方、差し戻し理由は分けて記録する。
+
+```yaml
+review_status: needs-revision
+review_issues:
+  - answer-mismatch
+```
+
+初期の状態候補:
+
+| 状態 | 通常学習 | 測定テスト | 理解度集計 |
+| --- | --- | --- | --- |
+| `adult-approved` | 使用可 | 使用可 | 確定値へ使用可 |
+| `ai-provisional` | 条件付きで使用可 | 使用しない | 暫定値として分離 |
+| `suspended` | 使用しない | 使用しない | 新規結果を作らない |
+| `invalidated` | 使用しない | 使用しない | 過去結果も集計対象外 |
+
+`ai-provisional` は、原本画像へ切り替えられることを出題条件にする。原本画像がなく AI-OCR 文だけの問題は、大人が確認するまで出題しない。問題原本は確認できても回答が未確認の場合は出題できるが、自動採点せず採点保留にする。
+
+子ども向けには未確認状態を強調せず、`問題がおかしい` を押しやすくする。大人向け画面では未確認状態を明示する。
+
+### 13.7 ImportProfile と品質停止
+
+取り込み品質は、モデル名だけでなく、教材、レイアウト、抽出経路の組み合わせで追跡する。
+
+```yaml
+import_profile:
+  source_document_type: worksheet
+  layout_profile_id: angle-worksheet-v1
+  extraction_route: ai-ocr-image
+  model_profile: inspect-image-low-cost
+```
+
+子どもが `問題がおかしい` を押した Question は即時停止する。同じ ImportProfile の異なる 3 問で報告された場合は、その取り込み種類を一時停止する仮ルールを置く。
+
+ImportProfile 停止時は、未出題の問題を停止し、すでに報告なく完了した問題は継続可能とする。プロファイル停止だけでは過去結果を無効化せず、問題単位で不備が確認された場合だけ集計から除外する。
+
+### 13.8 取り込み経路とレビュー UI
+
+アプリは、入力に応じた取り込み経路を推奨し、大人が変更できるようにする。
+
+```text
+テキスト層あり PDF
+  → テキスト抽出を推奨
+
+定型レイアウト・鮮明な画像
+  → ローカル OCR を推奨
+
+複雑なレイアウト・認識精度不足
+  → AI-OCR を推奨
+
+図表中心・OCR 不要
+  → 原本画像利用を推奨
+```
+
+AI-OCR で PDF 全体を送る経路は選択肢として残すが、標準経路にはしない。標準は必要なページ・領域だけを送信する。同じ ImportRun 内では送信範囲の許可を引き継げるが、別教材・別実行へ自動で引き継がない。
+
+レビュー画面は次の順で確認しやすくする。
+
+```text
+(1) 問題画像と回答画像の対応
+(2) 問題として成立しているか
+(3) 回答テキスト・採点方法
+(4) 単元・Skill・並び順
+```
+
+一括承認画面では、問題画像、回答画像、回答テキスト、採点方式、状態を並べ、原本ページへ拡大できるようにする。回答画像を正として使える問題は、回答テキストがなくても承認可能にする。
+
+個別承認と一括承認の両方を許可し、一括承認した ImportRun を追跡する。後から誤りが見つかった場合は、同じ実行やレイアウトの問題をまとめて再確認できるようにする。
+
+## 14. SourceDocument のリビジョンと削除
+
+より鮮明な PDF・画像へ差し替える場合は、元データを上書きせず SourceDocument の新しいリビジョンとして取り込む。
+
+```yaml
+source_document:
+  id: worksheet-001
+  revision: 2
+  replaces_revision: 1
+```
+
+画像だけが鮮明になり、問題内容と正答が同一だと大人が確認できた場合は、Question ID を維持して Question revision を増やし、表示参照先を新しい SourceItem へ更新する。旧領域座標は初期候補として引き継げるが、自動確定しない。
+
+SourceDocument の削除はアプリ上の操作に限定し、参照する SourceItem、Question、回答表現、過去履歴への影響を表示する。通常削除は論理削除と復元期間を経て物理削除し、個人情報や誤取り込みでは影響確認後の即時物理削除も許可する。
+
+削除理由に応じて対象を分ける。
+
+```text
+原本のみ削除
+  → 大人が確認した normalized 問題は継続可能
+
+教材コンテンツを完全削除
+  → normalized 文・回答・抽出成果物も削除
+  → 関連 Question を停止
+
+個人情報・誤取り込み
+  → 関連媒体と抽出成果物を連動削除
+```
+
+教材コンテンツを完全削除した場合は、過去イベント内の問題文、問題画像、回答画像、教材由来の回答テキストも削除し、日時、所要時間、当時の判定状態、集計対象外になった事実だけを残す。
+
+物理削除後は、内部 ID、教材種別、削除状態だけを残し、元ファイル名や詳細出典を削除可能にする。
+
+## 15. 初期実装範囲と将来拡張
+
+### 15.1 初期実装で優先する
+
+- SourceDocument、SourceItem、比率座標の領域
+- 問題側 SourceItem と回答側 SourceItem の単純な `answer-for` Mapping
+- 原本画像を primary とする Question
+- 回答画像と任意の回答テキスト
+- 個別承認と一括承認
+- `adult-approved` と `suspended`
+- 問題と回答を並べるレビュー UI
+
+### 15.2 方針として残し、必要性を見て追加する
+
+- AI-OCR による `ai-provisional` 出題
+- ImportProfile 単位の品質停止
+- 複数 ExtractionArtifact の比較と合成
+- normalized 表示と原本表示の切り替え
+- SourceDocument の論理削除、復元期間、完全削除
+- AI 採点評価ハーネスとの連携
+
+### 15.3 批判的に確認する点
+
+- 未確認問題を出題できるようにすると、承認待ちの負担は減るが、子どもが品質確認役になる危険がある
+- 原本画像を安全弁にしても、問題と回答の対応付けが誤っていれば誤学習を防げない
+- エンティティを増やしすぎると初期 PoC の実装が重くなるため、SourceItemMapping は単純な関係から始める
+- 教材削除を厳密に行うには、イベントやレポートへ教材内容を複製しすぎない設計が必要になる

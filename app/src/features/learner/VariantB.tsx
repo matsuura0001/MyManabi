@@ -1,5 +1,6 @@
 import { Header } from "../../components/Header";
 import type { LearnerProps } from "./types";
+import { AnswerEvidence, QuestionPresentation, responseLabel } from "./QuestionMedia";
 
 export function VariantB(props: LearnerProps) {
   return (
@@ -55,12 +56,12 @@ export function VariantB(props: LearnerProps) {
               {props.problem.subject} / {props.problem.skillIds.join(" / ")}
             </p>
             <h2>{props.problem.title}</h2>
-            <p className="story-problem">{props.problem.body}</p>
+            <QuestionPresentation question={props.problem} />
             <p className="problem-note">{props.problem.note}</p>
           </div>
           <aside className="split-controls">
             <label className="answer-box horizontal">
-              <span>式とこたえ</span>
+              <span>{responseLabel(props.problem)}</span>
               <input
                 value={props.answer}
                 onChange={(event) => props.setAnswer(event.currentTarget.value)}
@@ -73,7 +74,7 @@ export function VariantB(props: LearnerProps) {
             {props.feedbackVisible && (
               <div className="compact-feedback">
                 <strong>正解です</strong>
-                <span>{props.problem.answer.value}</span>
+                <AnswerEvidence question={props.problem} />
                 <button
                   className="small-button"
                   type="button"

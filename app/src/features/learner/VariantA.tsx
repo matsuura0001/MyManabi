@@ -1,6 +1,7 @@
 import { Header } from "../../components/Header";
 import { FeedbackBanner } from "../../components/FeedbackBanner";
 import type { LearnerProps } from "./types";
+import { AnswerEvidence, answerLabel, QuestionPresentation, responseLabel } from "./QuestionMedia";
 
 export function VariantA(props: LearnerProps) {
   return (
@@ -21,7 +22,7 @@ export function VariantA(props: LearnerProps) {
           visible={props.feedbackVisible}
           moveToNextProblem={props.moveToNextProblem}
           setNotice={props.setNotice}
-          expectedAnswer={props.problem.answer.value}
+          expectedAnswer={answerLabel(props.problem)}
         />
 
         <article className="problem-sheet wide-sheet">
@@ -30,7 +31,7 @@ export function VariantA(props: LearnerProps) {
               {props.problem.subject} / {props.problem.skillIds.join(" / ")}
             </p>
             <h1>{props.problem.title}</h1>
-            <p className="problem-body story-problem">{props.problem.body}</p>
+            <QuestionPresentation question={props.problem} />
             <p className="problem-note">{props.problem.note}</p>
           </div>
 
@@ -40,7 +41,7 @@ export function VariantA(props: LearnerProps) {
               <div>
                 <p className="eyebrow">回答を記録しました</p>
                 <h2>正解です</h2>
-                <p>{props.problem.answer.value}</p>
+                <p><AnswerEvidence question={props.problem} /></p>
               </div>
               <div className="feedback-sheet-actions">
                 <button
@@ -63,7 +64,7 @@ export function VariantA(props: LearnerProps) {
 
           <div className="answer-row">
             <label className="answer-box">
-              <span>式とこたえ</span>
+              <span>{responseLabel(props.problem)}</span>
               <input
                 autoFocus
                 value={props.answer}
@@ -97,7 +98,7 @@ export function VariantA(props: LearnerProps) {
             <div className="inline-feedback">
               <div>
                 <strong>正解です</strong>
-                <span>{props.problem.answer.value}</span>
+                <AnswerEvidence question={props.problem} />
               </div>
               <button
                 className="secondary-button"
