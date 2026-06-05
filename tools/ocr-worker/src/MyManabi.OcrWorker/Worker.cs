@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace MyManabi.OcrWorker;
 
@@ -150,6 +151,8 @@ public static class Worker
             }
         }
 
+        var (questionCandidates, answerCandidates, answerLinks) = BuildAnswerPairs(document.Id, pages, candidates);
+
         var result = new ExtractionResult
         {
             SourceDocumentId = document.Id,
@@ -160,11 +163,13 @@ public static class Worker
             GeneratedAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             PageCount = pages.Count,
             Pages = pages,
-            Candidates = candidates,
+            Candidates = questionCandidates,
+            AnswerCandidates = answerCandidates,
+            AnswerLinks = answerLinks,
             Metrics = new ImportMetrics
             {
                 Pages = pages.Count,
-                CandidateQuestions = candidates.Count,
+                CandidateQuestions = questionCandidates.Count,
                 ElapsedMs = stopwatch.ElapsedMilliseconds,
             },
         };
@@ -237,6 +242,112 @@ public static class Worker
         SkiaSharp.SKBitmap bitmap = SkiaSharp.SKBitmap.Decode(sourcePath)
             ?? throw new InvalidOperationException($"could not decode image: {sourcePath}");
         yield return (0, bitmap);
+    }
+
+    private static (List<CandidateResult> Questions, List<AnswerCandidateResult> Answers, List<AnswerLinkResult> Links)
+        BuildAnswerPairs(string documentId, IReadOnlyList<PageResult> pages, IReadOnlyList<CandidateResult> candidates)
+    {
+        var answerPages = pages
+            .Where(page => LooksLikeAnswerPage(page.OcrText))
+            .Select(page => page.Page)
+            .ToHashSet();
+
+        if (answerPages.Count == 0)
+            return (candidates.ToList(), new List<AnswerCandidateResult>(), new List<AnswerLinkResult>());
+
+        var questions = candidates.Where(candidate => !answerPages.Contains(candidate.Page)).ToList();
+        var answerSourceCandidates = candidates.Where(candidate => answerPages.Contains(candidate.Page)).ToList();
+        var answers = answerSourceCandidates.Select((candidate, index) => new AnswerCandidateResult
+        {
+            AnswerCandidateId = $"{documentId}-p{candidate.Page:D3}-a{index + 1:D2}",
+            Page = candidate.Page,
+            ItemLabel = candidate.ItemLabel,
+            Region = candidate.Region,
+            RegionImagePath = candidate.RegionImagePath,
+            OcrText = candidate.OcrText,
+            Confidence = candidate.Confidence,
+            SuggestedAnswer = SuggestAnswer(candidate.OcrText, candidate.Confidence),
+        }).ToList();
+
+        var links = new List<AnswerLinkResult>();
+        var usedAnswerIds = new HashSet<string>();
+        for (int index = 0; index < questions.Count; index++)
+        {
+            var question = questions[index];
+            AnswerCandidateResult? answer = null;
+            var matchReason = new List<string>();
+            double confidence = 0.45;
+
+            if (!string.IsNullOrWhiteSpace(question.ItemLabel))
+            {
+                answer = answers.FirstOrDefault(candidate =>
+                    !usedAnswerIds.Contains(candidate.AnswerCandidateId) &&
+                    candidate.ItemLabel == question.ItemLabel);
+                if (answer is not null)
+                {
+                    matchReason.Add("item-label");
+                    confidence = 0.78;
+                }
+            }
+
+            if (answer is null && index < answers.Count)
+            {
+                answer = answers[index];
+                matchReason.Add("sequence-order");
+                confidence = 0.55;
+            }
+
+            if (answer is null)
+                continue;
+
+            usedAnswerIds.Add(answer.AnswerCandidateId);
+            links.Add(new AnswerLinkResult
+            {
+                CandidateId = question.CandidateId,
+                AnswerCandidateId = answer.AnswerCandidateId,
+                MatchReason = matchReason,
+                Confidence = confidence,
+                ReviewStatus = "draft",
+                SuggestedAnswer = answer.SuggestedAnswer,
+            });
+        }
+
+        return (questions, answers, links);
+    }
+
+    private static bool LooksLikeAnswerPage(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        string head = text.Length <= 240 ? text : text[..240];
+        return Regex.IsMatch(head, @"(解答|解[ 　]*説|答え|こたえ|答[ 　]*案)", RegexOptions.CultureInvariant);
+    }
+
+    private static SuggestedAnswer? SuggestAnswer(string text, double confidence)
+    {
+        var line = text
+            .Split('\n', '\r')
+            .Select(item => item.Trim())
+            .FirstOrDefault(item => item.Length > 0);
+        if (line is null)
+            return null;
+
+        string value = Regex.Replace(
+            line,
+            @"^[ 　]*(?:第[ 　]*[0-9０-９]+[ 　]*問|(?:大|設)?問[ 　]*[0-9０-９]+|[(（]?[0-9０-９]+[)）.．。、]?|[①-⑳])[ 　:：\-]*",
+            "",
+            RegexOptions.CultureInvariant).Trim();
+
+        if (value.Length == 0)
+            value = line;
+
+        return new SuggestedAnswer
+        {
+            Value = value,
+            Source = "answer-ocr",
+            Confidence = Math.Round(confidence, 3),
+        };
     }
 
     private static void WriteResult(string outputDir, string relativeDir, ExtractionResult result)

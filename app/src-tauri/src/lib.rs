@@ -200,6 +200,28 @@ fn load_extraction_result(
 }
 
 #[tauri::command]
+fn get_page_image_path(
+    data_dir: Option<String>,
+    source_document_id: String,
+    page: u32,
+) -> Result<String, String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    let extraction_result = ocr_worker::load_extraction_result(&data_dir, &source_document_id)?;
+    if let Some(page_info) = extraction_result.pages.iter().find(|p| p.page == page) {
+        let extraction_dir = ocr_worker::extraction_result_path(&data_dir, &source_document_id)?
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let image_filename = std::path::Path::new(&page_info.image_path)
+            .file_name()
+            .unwrap();
+        Ok(extraction_dir.join(image_filename).to_string_lossy().into_owned())
+    } else {
+        Err(format!("Page {} not found in extraction result", page))
+    }
+}
+
+#[tauri::command]
 async fn reextract_candidate_region(
     data_dir: Option<String>,
     source_document_id: String,
@@ -250,10 +272,13 @@ struct PromoteExtractionCandidateInput {
     unit_id: String,
     skill_ids: Vec<String>,
     question_type: String,
+    presentation_type: String,
     title: String,
     body: String,
     note: String,
     answer_value: String,
+    #[serde(default)]
+    answer_candidate_id: Option<String>,
     purposes: Vec<String>,
 }
 
@@ -272,6 +297,15 @@ fn promote_extraction_candidate(
     if candidate.review_status != "adult-approved" {
         return Err("candidate must be adult-approved before promotion".to_owned());
     }
+    let answer_candidate = input
+        .answer_candidate_id
+        .as_deref()
+        .and_then(|answer_candidate_id| {
+            result
+                .answer_candidates
+                .iter()
+                .find(|answer| answer.answer_candidate_id == answer_candidate_id)
+        });
 
     let question_id = if input.question_id.trim().is_empty() {
         format!("imported-{}", candidate.candidate_id)
@@ -291,24 +325,66 @@ fn promote_extraction_candidate(
             .collect(),
         question_type: input.question_type,
         title: input.title.trim().to_owned(),
-        body: Some(input.body),
-        presentation: None,
+        body: if input.presentation_type == "normalized" { Some(input.body) } else { None },
+        presentation: if input.presentation_type == "normalized" {
+            None
+        } else {
+            Some(question_bank::Presentation {
+                r#type: input.presentation_type.clone(),
+                text: None,
+                document_id: Some(input.source_document_id.clone()),
+                page: Some(candidate.page),
+                region: if input.presentation_type == "source-region" {
+                    Some(question_bank::RegionRatio {
+                        x: candidate.region.x,
+                        y: candidate.region.y,
+                        width: candidate.region.width,
+                        height: candidate.region.height,
+                    })
+                } else {
+                    None
+                },
+                image_path: None,
+                media_id: None,
+                transcript: None,
+                show_transcript: None,
+            })
+        },
         expected_response: None,
         note: input.note,
         answer: Answer {
-            r#type: "exact-text".to_owned(),
-            value: Some(input.answer_value.trim().to_owned()),
-            text_value: None,
-            document_id: None,
-            page: None,
-            region: None,
+            r#type: if answer_candidate.is_some() {
+                "source-region".to_owned()
+            } else {
+                "exact-text".to_owned()
+            },
+            value: if answer_candidate.is_some() {
+                None
+            } else {
+                Some(input.answer_value.trim().to_owned())
+            },
+            text_value: answer_candidate.map(|_| input.answer_value.trim().to_owned()),
+            document_id: answer_candidate.map(|_| input.source_document_id.clone()),
+            page: answer_candidate.map(|answer| answer.page),
+            region: answer_candidate.map(|answer| question_bank::RegionRatio {
+                x: answer.region.x,
+                y: answer.region.y,
+                width: answer.region.width,
+                height: answer.region.height,
+            }),
             image_path: None,
             media_id: None,
             transcript: None,
             rubric: None,
             tags: Vec::new(),
         },
-        source_mapping: None,
+        source_mapping: answer_candidate.map(|answer| question_bank::SourceMapping {
+            question_region_id: Some(candidate.candidate_id.clone()),
+            answer_region_id: Some(answer.answer_candidate_id.clone()),
+            relation: "answer-key".to_owned(),
+            item_label: candidate.item_label.clone().or_else(|| answer.item_label.clone()),
+            confidence: Some("adult-confirmed".to_owned()),
+        }),
         source: Source {
             r#type: "imported".to_owned(),
             template_id: None,
@@ -341,6 +417,7 @@ pub fn run() {
             rasterize_source_document,
             extraction_result_path,
             load_extraction_result,
+            get_page_image_path,
             review_extraction_candidate,
             promote_extraction_candidate,
             reextract_candidate_region,
@@ -436,10 +513,12 @@ mod tests {
                 unit_id: "kanji".to_owned(),
                 skill_ids: vec!["kanji-writing".to_owned()],
                 question_type: "kanji".to_owned(),
+                presentation_type: "normalized".to_owned(),
                 title: "漢字を書こう".to_owned(),
                 body: "山を書く".to_owned(),
                 note: "".to_owned(),
                 answer_value: "山".to_owned(),
+                answer_candidate_id: None,
                 purposes: vec!["learning".to_owned()],
             },
         )

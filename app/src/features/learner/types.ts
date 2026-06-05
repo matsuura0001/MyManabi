@@ -11,6 +11,7 @@ export type LearnerProps = {
   setNotice: (value: string | null) => void;
   feedbackStyle: FeedbackStyle;
   feedbackVisible: boolean;
+  feedbackResult: "correct" | "incorrect" | "dont-know" | null;
   view: View;
   setView: (view: View) => void;
   submitAnswer: () => void;

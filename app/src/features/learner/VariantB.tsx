@@ -3,37 +3,55 @@ import type { LearnerProps } from "./types";
 import { AnswerEvidence, QuestionPresentation, responseLabel } from "./QuestionMedia";
 
 export function VariantB(props: LearnerProps) {
+  const currentLearner = props.learners.find(l => l.id === props.currentLearnerId);
+
   return (
     <main className="app-shell home-shell">
       <Header view={props.view} setView={props.setView} />
       <section className="home-grid">
-        <article className="welcome-panel">
-          <p className="eyebrow">こんにちは、
-             <select 
-                value={props.currentLearnerId} 
-                onChange={e => props.setCurrentLearnerId(e.target.value)}
-                style={{background: 'transparent', border: 'none', fontWeight: 'bold', fontSize: 'inherit', color: 'inherit'}}
-              >
-                {props.learners.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                {props.learners.length === 0 && <option value={props.currentLearnerId}>{props.currentLearnerId}</option>}
-              </select>
-          </p>
-          <h1>{props.problem.subject}</h1>
-          <p>出題元: {props.questionBankSource}</p>
-        </article>
+        <div className="learner-workspace">
+          <aside className="learner-side-panel">
+            <div className="side-card learner-card">
+              <span className="avatar">{currentLearner ? currentLearner.name.charAt(0) : "？"}</span>
+              <label>
+                <span>なまえ</span>
+                <select
+                  value={props.currentLearnerId}
+                  onChange={e => props.setCurrentLearnerId(e.target.value)}
+                >
+                  {props.learners.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  {props.learners.length === 0 && <option value={props.currentLearnerId}>{props.currentLearnerId}</option>}
+                </select>
+              </label>
+            </div>
 
-        {props.notice && <p className="notice wide">{props.notice}</p>}
+            <div className="side-card problem-meta-card">
+              <div className="side-meta">
+                <span>出題元</span>
+                <strong>{props.questionBankSource}</strong>
+              </div>
+              <div className="side-meta">
+                <span>教科</span>
+                <strong>{props.problem.subject}</strong>
+              </div>
+              {props.problem.skillIds.length > 0 && (
+                <div className="side-meta">
+                  <span>分類</span>
+                  <strong>{props.problem.skillIds.join(" / ")}</strong>
+                </div>
+              )}
+              {props.problem.note && <p className="side-note">{props.problem.note}</p>}
+            </div>
 
-        <article className="split-problem">
-          <div className="split-question">
-            <p className="eyebrow">
-              {props.problem.subject} / {props.problem.skillIds.join(" / ")}
-            </p>
-            <h2>{props.problem.title}</h2>
-            <QuestionPresentation question={props.problem} />
-            <p className="problem-note">{props.problem.note}</p>
-          </div>
-          <aside className="split-controls">
+            {props.notice && <p className="side-notice side-card" role="status">{props.notice}</p>}
+          </aside>
+
+          <article className="split-problem">
+            <div className="split-question">
+              <h2>{props.problem.title}</h2>
+              <QuestionPresentation question={props.problem} />
+            </div>
+            <aside className="split-controls">
             <label className="answer-box horizontal">
               <span>{responseLabel(props.problem)}</span>
               <input
@@ -47,7 +65,7 @@ export function VariantB(props: LearnerProps) {
             </button>
             {props.feedbackVisible && (
               <div className="compact-feedback">
-                <strong>正解です</strong>
+                <strong>{props.feedbackResult === "correct" ? "正解です" : props.feedbackResult === "dont-know" ? "正解はこちらです" : "ちがうみたい"}</strong>
                 <AnswerEvidence question={props.problem} />
                 <button
                   className="small-button"
@@ -72,8 +90,9 @@ export function VariantB(props: LearnerProps) {
             >
               答えが違うと思う
             </button>
-          </aside>
-        </article>
+            </aside>
+          </article>
+        </div>
       </section>
     </main>
   );

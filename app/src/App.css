@@ -66,7 +66,7 @@ button {
   flex-direction: column;
   min-height: calc(100vh - 96px);
   margin: 0 auto;
-  max-width: 1120px;
+  max-width: 1240px;
 }
 
 .learner-strip {
@@ -109,13 +109,27 @@ button {
   border: 1px solid #e5dece;
   border-radius: 30px;
   box-shadow: 0 20px 60px rgba(80, 69, 45, 0.09);
-  display: flex;
+  display: block;
   flex: 1;
-  flex-direction: column;
   margin: 0 auto;
   max-width: 1040px;
-  padding: 36px 46px 34px;
+  padding: 28px 34px 30px;
   width: 100%;
+}
+
+.learner-workspace {
+  align-items: start;
+  display: grid;
+  gap: 22px;
+  grid-template-columns: 164px minmax(0, 1040px);
+  justify-content: center;
+  margin: 0 auto;
+  max-width: 1240px;
+  width: 100%;
+}
+
+.problem-main {
+  min-width: 0;
 }
 
 .problem-copy {
@@ -202,6 +216,27 @@ h2 {
 .question-media-image {
   margin: 20px 0 10px;
   max-height: 58vh;
+}
+
+.source-page-image {
+  border: 1px solid #ded8cc;
+  border-radius: 12px;
+  display: block;
+  margin: 20px auto 10px;
+  max-height: min(64vh, 620px);
+  max-width: 100%;
+  object-fit: contain;
+  width: auto;
+}
+
+.source-region-frame {
+  background: #fff;
+  border: 1px solid #ded8cc;
+  border-radius: 12px;
+  margin: 20px auto 10px;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
 }
 
 .answer-media-image {
@@ -454,8 +489,13 @@ h2 {
   gap: 18px;
   grid-template-columns: repeat(12, 1fr);
   margin: 0 auto;
-  max-width: 1160px;
+  max-width: 1240px;
   min-height: calc(100vh - 96px);
+}
+
+.home-grid > .learner-workspace {
+  grid-column: 1 / -1;
+  max-width: 1240px;
 }
 
 .welcome-panel,
@@ -501,7 +541,6 @@ h2 {
   border-radius: 20px;
   display: grid;
   gap: 0;
-  grid-column: 1 / -1;
   grid-template-columns: minmax(0, 1fr) 260px;
   min-height: 0;
   overflow: hidden;
@@ -530,6 +569,95 @@ h2 {
 
 .split-controls button {
   width: 100%;
+}
+
+.learner-side-panel {
+  color: #40544d;
+  display: grid;
+  gap: 12px;
+  position: sticky;
+  top: 16px;
+}
+
+.side-card {
+  background: #f7f3e9;
+  border: 1px solid #e4dccd;
+  border-radius: 16px;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.learner-card {
+  align-items: center;
+  background: rgba(255, 253, 247, 0.78);
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 10px;
+}
+
+.problem-meta-card {
+  background: #f7f3e9;
+}
+
+.learner-side-panel .avatar {
+  height: 34px;
+  width: 34px;
+}
+
+.learner-side-panel label,
+.side-meta {
+  display: grid;
+  gap: 5px;
+}
+
+.learner-side-panel label span,
+.side-meta span {
+  color: #73847d;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.learner-side-panel select {
+  background: #fffdf7;
+  border: 1px solid #ded8cc;
+  border-radius: 10px;
+  color: #2f453e;
+  font: inherit;
+  font-weight: 800;
+  min-width: 0;
+  padding: 8px 9px;
+  width: 100%;
+}
+
+.side-meta strong {
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.side-notice {
+  background: #fff3d2;
+  border: 1px solid #edd59d;
+  border-radius: 12px;
+  color: #75571d;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+  margin: 0;
+  padding: 10px 11px;
+}
+
+.side-note {
+  background: #fffdf7;
+  border: 1px solid #e4dccd;
+  border-radius: 12px;
+  color: #71807b;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  margin: 0;
+  padding: 9px 10px;
 }
 
 .parent-shell.with-sidebar {
@@ -815,6 +943,148 @@ h2 {
   margin-top: 8px;
 }
 
+.answer-pair-review {
+  background: #f7f4ec;
+  border: 1px solid #ded8cc;
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+}
+
+.pair-review-header {
+  align-items: end;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.pair-review-header strong,
+.pair-review-header span {
+  display: block;
+}
+
+.pair-review-header span,
+.pair-pane-title span,
+.suggested-answer-box span,
+.suggested-answer-box small {
+  color: #71807b;
+  font-size: 12px;
+}
+
+.pair-review-header label {
+  display: grid;
+  gap: 4px;
+  min-width: min(280px, 100%);
+}
+
+.pair-review-header select {
+  background: #fffdf7;
+  border: 1px solid #d8d0c0;
+  border-radius: 8px;
+  color: #384943;
+  padding: 8px;
+}
+
+.pair-review-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pair-pane {
+  background: #fffdf7;
+  border: 1px solid #ded8cc;
+  border-radius: 10px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.pair-pane-title {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.pair-pane img {
+  background: #fff;
+  border: 2px solid #6ca592;
+  border-radius: 8px;
+  display: block;
+  max-height: 280px;
+  max-width: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
+.answer-pane img {
+  border-color: #d49b43;
+}
+
+.pair-pane pre {
+  background: #f4f1e9;
+  border: 1px solid #e1d8c8;
+  border-radius: 8px;
+  color: #384943;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 0;
+  max-height: 150px;
+  overflow: auto;
+  padding: 8px;
+  white-space: pre-wrap;
+}
+
+.pair-empty {
+  background: #fff3d2;
+  border: 1px solid #edd59d;
+  border-radius: 8px;
+  color: #75571d;
+  font-size: 13px;
+  margin: 0;
+  padding: 10px;
+}
+
+.suggested-answer-box {
+  background: #e2f1e8;
+  border: 1px solid #b8d7c8;
+  border-radius: 8px;
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+}
+
+.suggested-answer-box strong {
+  color: #285b4b;
+  font-size: 20px;
+}
+
+.match-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.match-reasons span {
+  background: #fff2d4;
+  border: 1px solid #edd59d;
+  border-radius: 999px;
+  color: #75571d;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 7px;
+}
+
+.pair-review-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .promotion-hint {
   color: #71807b;
   font-size: 13px;
@@ -930,6 +1200,19 @@ h2 {
     padding: 24px 20px 20px;
   }
 
+  .learner-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .learner-side-panel {
+    order: -1;
+    position: static;
+  }
+
+  .source-page-image {
+    max-height: 56vh;
+  }
+
   .home-grid,
   .parent-grid,
   .summary-row {
@@ -979,6 +1262,16 @@ h2 {
   .import-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .pair-review-header,
+  .pair-review-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pair-review-header {
+    align-items: stretch;
+    display: grid;
   }
 }
 

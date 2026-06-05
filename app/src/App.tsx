@@ -22,6 +22,7 @@ function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const feedbackStyle: FeedbackStyle = "sheet";
   const [feedbackVisible, setFeedbackVisible] = useState(false);
+  const [feedbackResult, setFeedbackResult] = useState<"correct" | "incorrect" | "dont-know" | null>(null);
   const [showDeveloperPanel, setShowDeveloperPanel] = useState(false);
   const [problems, setProblems] = useState<Question[]>(fallbackProblems);
   const [questionBankSource, setQuestionBankSource] = useState("ブラウザ用の合成問題");
@@ -75,6 +76,7 @@ function App() {
       setAnswer("");
       setNotice(null);
       setFeedbackVisible(false);
+      setFeedbackResult(null);
       setQuestionBankSource("読み込み中...");
       setCurrentLearnerId(id);
     }
@@ -121,23 +123,33 @@ function App() {
     setNotice(message);
     setAnswer("");
     setFeedbackVisible(false);
+    setFeedbackResult(null);
     setProblemIndex((value) => value + 1);
   }
 
   function submitAnswer() {
     setNotice(null);
+    if (!currentProblem) return;
+
+    let expected = currentProblem.answer.value || currentProblem.answer.textValue || "";
+    // Fullwidth to halfwidth numbers can be complex, but for now simple trim matching
+    let isCorrect = answer.trim() === expected.trim();
+    
+    setFeedbackResult(isCorrect ? "correct" : "incorrect");
     setFeedbackVisible(true);
-    sendLearningEvent("text", "not-graded", "unknown");
+    sendLearningEvent("text", "deterministic", isCorrect ? "correct" : "unknown");
   }
 
   function handleDontKnow() {
-    setNotice("解説を表示する画面へ進みます。");
+    setNotice("解説を表示します。");
+    setFeedbackResult("dont-know");
+    setFeedbackVisible(true);
     sendLearningEvent("none", "not-graded", "unknown", { did_not_know: true });
   }
 
   function handleDispute() {
-    setNotice("答えがちがうと思う、と記録しました。");
     sendLearningEvent("none", "not-graded", "unknown", { disputed: true });
+    moveToNextProblem("答えがちがうと思う、と記録し次の問題へ進みました。");
   }
 
   const learnerProps = {
@@ -149,6 +161,7 @@ function App() {
     setNotice,
     feedbackStyle,
     feedbackVisible,
+    feedbackResult,
     view,
     setView,
     submitAnswer,

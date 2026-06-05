@@ -14,7 +14,7 @@ export type RegionRatio = {
   height: number;
 };
 
-export type PresentationType = "text" | "source-region" | "image" | "audio";
+export type PresentationType = "text" | "source-region" | "source-page" | "image" | "audio";
 export type ExpectedResponseType =
   | "text"
   | "numeric"
@@ -29,6 +29,7 @@ export type AnswerType =
   | "choice"
   | "ai-assisted"
   | "source-region"
+  | "source-page"
   | "image"
   | "exemplar-image"
   | "audio"

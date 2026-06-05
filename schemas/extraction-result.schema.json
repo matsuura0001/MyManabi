@@ -27,6 +27,8 @@
     "pageCount": { "type": "integer", "minimum": 0 },
     "pages": { "type": "array", "items": { "$ref": "#/$defs/page" } },
     "candidates": { "type": "array", "items": { "$ref": "#/$defs/candidate" } },
+    "answerCandidates": { "type": "array", "items": { "$ref": "#/$defs/answerCandidate" } },
+    "answerLinks": { "type": "array", "items": { "$ref": "#/$defs/answerLink" } },
     "metrics": { "$ref": "#/$defs/metrics" }
   },
   "$defs": {
@@ -59,6 +61,64 @@
           "enum": ["numeric", "kanji", "multiple-choice", "word-problem", "free-text", "handwriting", "speech", "unknown"]
         },
         "reviewStatus": { "enum": ["draft", "adult-approved", "suspended"] }
+      }
+    },
+    "answerCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["answerCandidateId", "page", "region", "ocrText", "confidence"],
+      "properties": {
+        "answerCandidateId": { "type": "string", "minLength": 1 },
+        "page": { "type": "integer", "minimum": 1 },
+        "itemLabel": { "type": "string", "minLength": 1 },
+        "region": { "$ref": "#/$defs/region" },
+        "regionImagePath": { "type": "string", "pattern": "^content/extractions/[A-Za-z0-9_-]+/.+\\.png$" },
+        "ocrText": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "suggestedAnswer": { "$ref": "#/$defs/suggestedAnswer" }
+      }
+    },
+    "answerLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidateId", "answerCandidateId", "confidence", "reviewStatus"],
+      "properties": {
+        "candidateId": { "type": "string", "minLength": 1 },
+        "answerCandidateId": { "type": "string", "minLength": 1 },
+        "matchReason": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "reviewStatus": { "enum": ["draft", "adult-approved", "suspended"] },
+        "suggestedAnswer": { "$ref": "#/$defs/suggestedAnswer" }
+      }
+    },
+    "suggestedAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "source", "confidence"],
+      "properties": {
+        "value": { "type": "string" },
+        "source": {
+          "enum": ["answer-ocr", "question-ocr-inference", "ai-assisted", "adult-entered"]
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "alternatives": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["value", "source", "confidence"],
+            "properties": {
+              "value": { "type": "string" },
+              "source": {
+                "enum": ["answer-ocr", "question-ocr-inference", "ai-assisted", "adult-entered"]
+              },
+              "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          }
+        }
       }
     },
     "region": {

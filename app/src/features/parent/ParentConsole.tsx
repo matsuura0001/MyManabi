@@ -32,7 +32,7 @@ export function ParentConsole({
 }) {
   const [suggestion, setSuggestion] = useState("分数のたし算 / 通分を含む問題");
   const [sent, setSent] = useState(false);
-  const [pdfUrl, setPdfUrl] = useState("");
+  // const [pdfUrl, _setPdfUrl] = useState("");
   const [useAiOcr, setUseAiOcr] = useState(false);
   const [importedDocument, setImportedDocument] = useState<SourceDocument | null>(null);
   const [sourceDocuments, setSourceDocuments] = useState<SourceDocument[]>([]);
@@ -127,19 +127,19 @@ export function ParentConsole({
     setExtractionPath(null);
   }
 
-  async function importPdf() {
-    setImporting(true);
-    setImportError(null);
-    resetImportState();
-    try {
-      setImportedDocument(await invoke<SourceDocument>("import_pdf_from_url", { url: pdfUrl }));
-      await loadSourceDocuments();
-    } catch (caught) {
-      setImportError(String(caught));
-    } finally {
-      setImporting(false);
-    }
-  }
+  // async function _importPdf() {
+  //   setImporting(true);
+  //   setImportError(null);
+  //   resetImportState();
+  //   try {
+  //     const result = await invoke<ExtractionResult>("import_local_pdf", { sourceDocumentId });
+  //     setExtractionResult(result);
+  //   } catch (error) {
+  //     setImportError(String(error));
+  //   } finally {
+  //     setImporting(false);
+  //   }
+  // }
 
   async function selectAndImportSource() {
     const path = await open({

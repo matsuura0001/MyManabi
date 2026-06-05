@@ -8,6 +8,14 @@ export type SourceDocument = {
   originalFileName: string;
   storedPath: string;
   sourceUrl?: string;
+  contentHash?: {
+    algorithm: "sha256";
+    value: string;
+  };
+  originalFileNames?: string[];
+  firstImportedAtEpochSeconds?: number;
+  lastSeenAtEpochSeconds?: number;
+  importCount?: number;
   importedAtEpochSeconds: number;
   byteSize: number;
   status: SourceDocumentStatus;

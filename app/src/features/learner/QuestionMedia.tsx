@@ -1,5 +1,12 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { useEffect, useState } from "react";
 import type { Question } from "../../domain/question";
+
+type SourceImageItem = {
+  documentId?: string;
+  page?: number;
+  region?: { x: number; y: number; width: number; height: number };
+};
 
 export function answerLabel(question: Question): string {
   return (
@@ -31,15 +38,78 @@ export function responseLabel(question: Question): string {
   }
 }
 
-function sourceRegionLabel(item: {
-  documentId?: string;
-  page?: number;
-  region?: { x: number; y: number; width: number; height: number };
-}) {
-  const region = item.region
-    ? `x=${item.region.x.toFixed(2)}, y=${item.region.y.toFixed(2)}, w=${item.region.width.toFixed(2)}, h=${item.region.height.toFixed(2)}`
-    : "領域未設定";
-  return `${item.documentId ?? "教材"} / page ${item.page ?? "?"} / ${region}`;
+export function SourceRegionImage({ item }: { item: SourceImageItem }) {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
+
+  useEffect(() => {
+    setImageUrl(null);
+    setError(null);
+    setNaturalSize(null);
+    if (item.documentId && item.page) {
+      invoke<string>("get_page_image_path", { sourceDocumentId: item.documentId, page: item.page })
+        .then(path => setImageUrl(convertFileSrc(path)))
+        .catch(err => setError(String(err)));
+    }
+  }, [item.documentId, item.page]);
+
+  if (error) {
+    return <div className="question-media-error">画像を取得できませんでした: {error}</div>;
+  }
+
+  if (!imageUrl) {
+    return <div className="question-media-loading">画像を読み込み中...</div>;
+  }
+
+  if (!item.region) {
+    return (
+      <img
+        src={imageUrl}
+        alt="ページ全体"
+        className="source-page-image"
+        onLoad={(event) =>
+          setNaturalSize({
+            width: event.currentTarget.naturalWidth,
+            height: event.currentTarget.naturalHeight,
+          })
+        }
+      />
+    );
+  }
+
+  const { x, y, width, height } = item.region;
+  const pageAspectRatio = naturalSize ? naturalSize.width / naturalSize.height : 1;
+  const regionAspectRatio = pageAspectRatio * (width / height);
+
+  return (
+    <div
+      className="source-region-frame"
+      style={{
+        aspectRatio: regionAspectRatio,
+        maxWidth: `min(100%, calc(min(64vh, 620px) * ${regionAspectRatio}))`,
+      }}
+    >
+      <img 
+        src={imageUrl} 
+        alt="出題領域"
+        onLoad={(event) =>
+          setNaturalSize({
+            width: event.currentTarget.naturalWidth,
+            height: event.currentTarget.naturalHeight,
+          })
+        }
+        style={{
+          position: 'absolute',
+          top: `-${(y / height) * 100}%`,
+          left: `-${(x / width) * 100}%`,
+          width: `${(1 / width) * 100}%`,
+          height: 'auto',
+          maxWidth: 'none'
+        }} 
+      />
+    </div>
+  );
 }
 
 export function QuestionPresentation({ question }: { question: Question }) {
@@ -74,11 +144,10 @@ export function QuestionPresentation({ question }: { question: Question }) {
     );
   }
 
-  if (presentation.type === "source-region") {
+  if (presentation.type === "source-region" || presentation.type === "source-page") {
     return (
-      <div className="question-media-box">
-        <strong>教材画像の領域</strong>
-        <span>{sourceRegionLabel(presentation)}</span>
+      <div className="question-media-box" style={{ padding: 0, border: 'none', background: 'transparent' }}>
+        <SourceRegionImage item={presentation} />
       </div>
     );
   }
@@ -98,12 +167,14 @@ export function AnswerEvidence({ question }: { question: Question }) {
     );
   }
 
-  if (answer.type === "source-region") {
+  if (answer.type === "source-region" || answer.type === "source-page") {
     return (
-      <span>
-        {answer.textValue ? `${answer.textValue} / ` : ""}
-        {sourceRegionLabel(answer)}
-      </span>
+      <div style={{ marginTop: '1rem' }}>
+        {answer.textValue && <p><strong>{answer.textValue}</strong></p>}
+        <div style={{ maxWidth: '400px' }}>
+          <SourceRegionImage item={answer} />
+        </div>
+      </div>
     );
   }
 

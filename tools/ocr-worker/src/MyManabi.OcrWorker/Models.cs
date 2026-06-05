@@ -58,6 +58,53 @@ public sealed class CandidateResult
     public string ReviewStatus { get; set; } = "draft";
 }
 
+public sealed class SuggestedAnswer
+{
+    public string Value { get; set; } = "";
+    public string Source { get; set; } = "answer-ocr";
+    public double Confidence { get; set; }
+    public List<SuggestedAnswerAlternative> Alternatives { get; set; } = new();
+}
+
+public sealed class SuggestedAnswerAlternative
+{
+    public string Value { get; set; } = "";
+    public string Source { get; set; } = "answer-ocr";
+    public double Confidence { get; set; }
+}
+
+public sealed class AnswerCandidateResult
+{
+    public string AnswerCandidateId { get; set; } = "";
+    public int Page { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ItemLabel { get; set; }
+
+    public RegionRatio Region { get; set; } = new();
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RegionImagePath { get; set; }
+
+    public string OcrText { get; set; } = "";
+    public double Confidence { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SuggestedAnswer? SuggestedAnswer { get; set; }
+}
+
+public sealed class AnswerLinkResult
+{
+    public string CandidateId { get; set; } = "";
+    public string AnswerCandidateId { get; set; } = "";
+    public List<string> MatchReason { get; set; } = new();
+    public double Confidence { get; set; }
+    public string ReviewStatus { get; set; } = "draft";
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SuggestedAnswer? SuggestedAnswer { get; set; }
+}
+
 /// <summary>Comparable import metrics (spec §11.5).</summary>
 public sealed class ImportMetrics
 {
@@ -83,5 +130,7 @@ public sealed class ExtractionResult
     public int PageCount { get; set; }
     public List<PageResult> Pages { get; set; } = new();
     public List<CandidateResult> Candidates { get; set; } = new();
+    public List<AnswerCandidateResult> AnswerCandidates { get; set; } = new();
+    public List<AnswerLinkResult> AnswerLinks { get; set; } = new();
     public ImportMetrics Metrics { get; set; } = new();
 }

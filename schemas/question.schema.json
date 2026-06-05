@@ -35,7 +35,7 @@
       "additionalProperties": false,
       "required": ["type"],
       "properties": {
-        "type": { "enum": ["text", "source-region", "image", "audio"] },
+        "type": { "enum": ["text", "source-region", "source-page", "image", "audio"] },
         "text": { "type": "string", "minLength": 1 },
         "documentId": { "type": "string", "minLength": 1 },
         "page": { "type": "integer", "minimum": 1 },

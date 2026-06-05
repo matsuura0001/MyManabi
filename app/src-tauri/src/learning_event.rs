@@ -80,6 +80,8 @@ pub fn record_learning_event(data_dir: &Path, event: &LearningEvent) -> Result<(
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 

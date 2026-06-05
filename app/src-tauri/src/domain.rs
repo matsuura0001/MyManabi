@@ -231,6 +231,8 @@ pub fn save_learner_question_state(
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 

@@ -60,6 +60,54 @@ pub struct CandidateResult {
     pub review_status: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestedAnswer {
+    pub value: String,
+    pub source: String,
+    pub confidence: f32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alternatives: Vec<SuggestedAnswerAlternative>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestedAnswerAlternative {
+    pub value: String,
+    pub source: String,
+    pub confidence: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnswerCandidateResult {
+    pub answer_candidate_id: String,
+    pub page: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_label: Option<String>,
+    pub region: RegionRatio,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region_image_path: Option<String>,
+    pub ocr_text: String,
+    pub confidence: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested_answer: Option<SuggestedAnswer>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnswerLinkResult {
+    pub candidate_id: String,
+    pub answer_candidate_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub match_reason: Vec<String>,
+    pub confidence: f32,
+    #[serde(rename = "reviewStatus")]
+    pub review_status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested_answer: Option<SuggestedAnswer>,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportMetrics {
@@ -85,6 +133,10 @@ pub struct ExtractionResult {
     pub page_count: u32,
     pub pages: Vec<PageResult>,
     pub candidates: Vec<CandidateResult>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub answer_candidates: Vec<AnswerCandidateResult>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub answer_links: Vec<AnswerLinkResult>,
     pub metrics: ImportMetrics,
 }
 
@@ -860,6 +912,8 @@ mod tests {
             ocr_text: "new text".to_owned(),
             confidence: 0.9,
             suggested_question_type: "unknown".to_owned(),
+            suggested_subject: None,
+            suggested_unit_id: None,
             review_status: "draft".to_owned(),
         };
 
@@ -889,6 +943,8 @@ mod tests {
             ocr_text: String::new(),
             confidence: 0.0,
             suggested_question_type: "unknown".to_owned(),
+            suggested_subject: None,
+            suggested_unit_id: None,
             review_status: "draft".to_owned(),
         };
 
@@ -913,6 +969,8 @@ mod tests {
             ocr_text: "manual".to_owned(),
             confidence: 1.0,
             suggested_question_type: "unknown".to_owned(),
+            suggested_subject: None,
+            suggested_unit_id: None,
             review_status: "draft".to_owned(),
         });
 
@@ -939,6 +997,8 @@ mod tests {
                 ocr_text: "manual".to_owned(),
                 confidence: 1.0,
                 suggested_question_type: "unknown".to_owned(),
+                suggested_subject: None,
+                suggested_unit_id: None,
                 review_status: "draft".to_owned(),
             },
         );

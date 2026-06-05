@@ -20,6 +20,23 @@
     "originalFileName": { "type": "string", "minLength": 1 },
     "storedPath": { "type": "string", "pattern": "^sources/[A-Za-z0-9_-]+\\.(pdf|png|jpg|webp|txt|md)$" },
     "sourceUrl": { "type": ["string", "null"], "format": "uri" },
+    "contentHash": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": { "enum": ["sha256"] },
+        "value": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "originalFileNames": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "firstImportedAtEpochSeconds": { "type": "integer", "minimum": 0 },
+    "lastSeenAtEpochSeconds": { "type": "integer", "minimum": 0 },
+    "importCount": { "type": "integer", "minimum": 1 },
     "importedAtEpochSeconds": { "type": "integer", "minimum": 0 },
     "byteSize": { "type": "integer", "minimum": 1 },
     "status": { "enum": ["stored"] },
