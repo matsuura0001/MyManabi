@@ -45,11 +45,23 @@ export function ParentConsole({
   const isSidebar = variant === "B";
 
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
+  const [showAiSettingsDialog, setShowAiSettingsDialog] = useState(false);
 
   useEffect(() => {
     loadSourceDocuments();
     loadAiSettings();
   }, []);
+
+  useEffect(() => {
+    if (!showAiSettingsDialog) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowAiSettingsDialog(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showAiSettingsDialog]);
 
   async function loadAiSettings() {
     try {
@@ -348,58 +360,13 @@ export function ParentConsole({
           )}
 
           {aiSettings && (
-            <details className="url-import">
-              <summary>AI-OCR 設定 (プロバイダ / モデル選択)</summary>
-              <div style={{ padding: '0.5rem 0', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <div>
-                  <label style={{ fontWeight: 'bold' }}>使用するプロバイダ:</label>
-                  <select
-                    value={aiSettings.activeProvider}
-                    onChange={(e) => handleActiveProviderChange(e.target.value)}
-                    style={{ marginLeft: '0.5rem', padding: '0.2rem' }}
-                  >
-                    {aiSettings.providers.map(p => (
-                      <option key={p.provider} value={p.provider}>{p.provider}</option>
-                    ))}
-                  </select>
-                </div>
-                {aiSettings.providers.map(p => (
-                  <div key={p.provider} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.75rem', border: '1px solid var(--border-color, #ccc)', borderRadius: '6px', opacity: aiSettings.activeProvider === p.provider ? 1 : 0.5 }}>
-                    <div style={{ fontWeight: 'bold' }}>{p.provider}</div>
-                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                      <label style={{ width: '80px', fontSize: '0.9rem' }}>API Key:</label>
-                      <input
-                        type="password"
-                        placeholder={`${p.provider} の API Key`}
-                        value={p.apiKey}
-                        onChange={(e) => handleApiKeyChange(p.provider, e.target.value)}
-                        style={{ flex: 1 }}
-                      />
-                    </div>
-                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                      <label style={{ width: '80px', fontSize: '0.9rem' }}>モデル名:</label>
-                      <input
-                        type="text"
-                        placeholder="例: gemini-1.5-flash"
-                        value={p.model}
-                        onChange={(e) => handleModelChange(p.provider, e.target.value)}
-                        style={{ flex: 1 }}
-                      />
-                    </div>
-                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                      <label style={{ width: '80px', fontSize: '0.9rem' }}>Base URL:</label>
-                      <input
-                        type="url"
-                        placeholder="API のベース URL"
-                        value={p.baseUrl}
-                        onChange={(e) => handleBaseUrlChange(p.provider, e.target.value)}
-                        style={{ flex: 1 }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </details>
+            <button
+              className="secondary-button ai-settings-button"
+              type="button"
+              onClick={() => setShowAiSettingsDialog(true)}
+            >
+              AI-OCR 設定
+            </button>
           )}
 
           {importedDocument && (
@@ -452,6 +419,93 @@ export function ParentConsole({
           {importError && <p className="import-error">取り込めませんでした: {importError}</p>}
         </section>
       </section>
+
+      {aiSettings && showAiSettingsDialog && (
+        <div className="settings-dialog-backdrop" role="presentation" onClick={() => setShowAiSettingsDialog(false)}>
+          <section
+            aria-labelledby="ai-settings-title"
+            aria-modal="true"
+            className="settings-dialog"
+            role="dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="settings-dialog-header">
+              <div>
+                <p className="eyebrow">教材を取り込む</p>
+                <h2 id="ai-settings-title">AI-OCR 設定</h2>
+              </div>
+              <button
+                aria-label="AI-OCR 設定を閉じる"
+                className="region-modal-close"
+                type="button"
+                onClick={() => setShowAiSettingsDialog(false)}
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="settings-dialog-body">
+              <label className="settings-provider-select">
+                <span>使用するプロバイダ</span>
+                <select
+                  value={aiSettings.activeProvider}
+                  onChange={(event) => handleActiveProviderChange(event.currentTarget.value)}
+                >
+                  {aiSettings.providers.map((provider) => (
+                    <option key={provider.provider} value={provider.provider}>
+                      {provider.provider}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="ai-provider-list">
+                {aiSettings.providers.map((provider) => (
+                  <section
+                    className={`ai-provider-panel ${aiSettings.activeProvider === provider.provider ? "active" : ""}`}
+                    key={provider.provider}
+                  >
+                    <strong>{provider.provider}</strong>
+                    <label>
+                      <span>API Key</span>
+                      <input
+                        type="password"
+                        placeholder={`${provider.provider} の API Key`}
+                        value={provider.apiKey}
+                        onChange={(event) => handleApiKeyChange(provider.provider, event.currentTarget.value)}
+                      />
+                    </label>
+                    <label>
+                      <span>モデル名</span>
+                      <input
+                        type="text"
+                        placeholder="例: gemini-1.5-flash"
+                        value={provider.model}
+                        onChange={(event) => handleModelChange(provider.provider, event.currentTarget.value)}
+                      />
+                    </label>
+                    <label>
+                      <span>Base URL</span>
+                      <input
+                        type="url"
+                        placeholder="API のベース URL"
+                        value={provider.baseUrl}
+                        onChange={(event) => handleBaseUrlChange(provider.provider, event.currentTarget.value)}
+                      />
+                    </label>
+                  </section>
+                ))}
+              </div>
+            </div>
+
+            <footer className="settings-dialog-footer">
+              <button className="secondary-button" type="button" onClick={() => setShowAiSettingsDialog(false)}>
+                閉じる
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

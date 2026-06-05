@@ -6,9 +6,11 @@ import type {
   ExtractionCandidate,
   ExtractionResult,
   PromotionForm,
-  SuggestedAnswer,
 } from "../../domain/extraction";
 import type { Question } from "../../domain/question";
+import type { ProposedItem } from "../../domain/evaluation";
+import { answerSourceLabel, answerValueFromSelection } from "../../domain/importReview.mjs";
+import { SourceRegionImage } from "../learner/QuestionMedia";
 import { PromotionEditor } from "./PromotionEditor";
 import { RegionEditModal } from "./RegionEditModal";
 
@@ -16,6 +18,7 @@ function artifactImageUrl(
   extractionPath: string | null,
   sourceDocumentId: string,
   imagePath: string | undefined,
+  cacheBuster: number = 0,
 ): string | null {
   if (!extractionPath || !imagePath) return null;
   const extractionDir = extractionPath.replace(/[/\\]extraction-result\.json$/i, "");
@@ -26,15 +29,59 @@ function artifactImageUrl(
     ? normalized.slice(normalized.indexOf(marker) + marker.length)
     : normalized.split("/").slice(-1)[0] ?? normalized;
 
-  return convertFileSrc(`${extractionDir}${sep}${relativeInsideExtraction.replace(/\//g, sep)}`);
+  const fileSrc = convertFileSrc(`${extractionDir}${sep}${relativeInsideExtraction.replace(/\//g, sep)}`);
+  return cacheBuster > 0 ? `${fileSrc}?t=${cacheBuster}` : fileSrc;
 }
 
-function answerTextFromSuggestion(suggestion: SuggestedAnswer | undefined): string {
-  return suggestion?.value?.trim() ?? "";
+function answerCandidateFromQuestionCandidate(candidate: ExtractionCandidate): AnswerCandidate {
+  return {
+    answerCandidateId: candidate.candidateId,
+    page: candidate.page,
+    itemLabel: candidate.itemLabel,
+    region: candidate.region,
+    regionImagePath: candidate.regionImagePath,
+    ocrText: candidate.ocrText,
+    confidence: candidate.confidence,
+  };
 }
 
-function bestAnswerSuggestion(link: AnswerLink | undefined, answer: AnswerCandidate | undefined) {
-  return link?.suggestedAnswer ?? answer?.suggestedAnswer;
+function answerCandidatesForCandidate(result: ExtractionResult, candidate: ExtractionCandidate): AnswerCandidate[] {
+  const answerLinks = (result.answerLinks ?? [])
+    .filter((link) => link.candidateId === candidate.candidateId)
+    .sort((a, b) => b.confidence - a.confidence);
+  const linkedAnswerIds = answerLinks.map((link) => link.answerCandidateId);
+  const linkedAnswers = linkedAnswerIds
+    .map((answerCandidateId) =>
+      (result.answerCandidates ?? []).find((answer) => answer.answerCandidateId === answerCandidateId),
+    )
+    .filter((answer): answer is AnswerCandidate => Boolean(answer));
+  const unlinkedAnswers = [...(result.answerCandidates ?? [])]
+    .filter((answer) => !linkedAnswerIds.includes(answer.answerCandidateId))
+    .sort((a, b) => {
+      if (a.page !== b.page) return a.page - b.page;
+      return (a.itemLabel || "").localeCompare(b.itemLabel || "");
+    });
+  const manualCandidates = result.candidates
+    .filter((item) => item.candidateId !== candidate.candidateId)
+    .map(answerCandidateFromQuestionCandidate)
+    .sort((a, b) => {
+      if (a.page !== b.page) return a.page - b.page;
+      return (a.itemLabel || "").localeCompare(b.itemLabel || "");
+    });
+
+  const seen = new Set<string>();
+  return [...linkedAnswers, ...unlinkedAnswers, ...manualCandidates].filter((answer) => {
+    if (seen.has(answer.answerCandidateId)) return false;
+    seen.add(answer.answerCandidateId);
+    return true;
+  }).sort((a, b) => {
+    const aLinked = linkedAnswerIds.includes(a.answerCandidateId);
+    const bLinked = linkedAnswerIds.includes(b.answerCandidateId);
+    if (aLinked && !bLinked) return -1;
+    if (!aLinked && bLinked) return 1;
+    if (a.page !== b.page) return a.page - b.page;
+    return (a.itemLabel || "").localeCompare(b.itemLabel || "");
+  });
 }
 
 function labelForAnswer(answer: AnswerCandidate, index: number): string {
@@ -42,9 +89,16 @@ function labelForAnswer(answer: AnswerCandidate, index: number): string {
   return `候補 ${index + 1}: P${answer.page}${item}`;
 }
 
-function defaultPromotionForm(candidate: ExtractionCandidate, ocrText: string): PromotionForm {
+function defaultPromotionForm(
+  candidate: ExtractionCandidate,
+  ocrText: string,
+  answerCandidateId?: string,
+  answer?: AnswerCandidate,
+  link?: AnswerLink,
+): PromotionForm {
   const subjectStr = candidate.suggestedSubject ? `【${candidate.suggestedSubject}】` : "";
   const itemStr = candidate.itemLabel ? ` 問${candidate.itemLabel}` : "";
+  const answerValue = answerValueFromSelection(ocrText, answer, link);
 
   return {
     questionId: `imported-${candidate.candidateId}`,
@@ -55,10 +109,31 @@ function defaultPromotionForm(candidate: ExtractionCandidate, ocrText: string): 
     presentationType: "source-region",
     title: `${subjectStr}P${candidate.page}${itemStr} の問題`,
     body: ocrText,
-    note: "OCR 候補から昇格",
-    answerValue: "",
+    note: answerCandidateId ? "OCR 候補から昇格。問題と解答の対応付けを確認済み。" : "OCR 候補から昇格",
+    answerValue,
+    answerCandidateId,
     purposes: "learning,review",
   };
+}
+
+function initialSelectedAnswerId(result: ExtractionResult, candidate: ExtractionCandidate): string | undefined {
+  const firstLink = (result.answerLinks ?? [])
+    .filter((link) => link.candidateId === candidate.candidateId)
+    .sort((a, b) => b.confidence - a.confidence)[0];
+  if (firstLink) return firstLink.answerCandidateId;
+
+  return undefined;
+}
+
+function initialPromotionForm(result: ExtractionResult, candidate: ExtractionCandidate): PromotionForm {
+  const answerCandidateId = initialSelectedAnswerId(result, candidate);
+  const answer = answerCandidatesForCandidate(result, candidate).find(
+    (item) => item.answerCandidateId === answerCandidateId,
+  );
+  const link = (result.answerLinks ?? []).find(
+    (item) => item.candidateId === candidate.candidateId && item.answerCandidateId === answerCandidateId,
+  );
+  return defaultPromotionForm(candidate, candidate.ocrText, answerCandidateId, answer, link);
 }
 
 export function ExtractionReview({
@@ -73,28 +148,32 @@ export function ExtractionReview({
   sourceDocumentId: string;
 }) {
   const [result, setResult] = useState(initialResult);
+  const [refreshCounter, setRefreshCounter] = useState(0);
   const [candidateTexts, setCandidateTexts] = useState<Record<string, string>>(
     () => Object.fromEntries(initialResult.candidates.map((c) => [c.candidateId, c.ocrText])),
   );
   const [reviewingCandidateId, setReviewingCandidateId] = useState<string | null>(null);
   const [promotedQuestionIds, setPromotedQuestionIds] = useState<string[]>([]);
-  const [promotionForms, setPromotionForms] = useState<Record<string, PromotionForm>>({});
+  const [promotionForms, setPromotionForms] = useState<Record<string, PromotionForm>>(() =>
+    Object.fromEntries(
+      initialResult.candidates.map((candidate) => [
+        candidate.candidateId,
+        initialPromotionForm(initialResult, candidate),
+      ]),
+    ),
+  );
   const [promotingCandidateId, setPromotingCandidateId] = useState<string | null>(null);
   const [regionEditCandidate, setRegionEditCandidate] = useState<ExtractionCandidate | null>(null);
   const [candidateFeedback, setCandidateFeedback] = useState<Record<string, { type: 'success' | 'error', message: string }>>({});
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string | undefined>>(() => {
-    const links = initialResult.answerLinks ?? [];
     return Object.fromEntries(
-      initialResult.candidates.map((candidate) => {
-        const firstLink = links
-          .filter((link) => link.candidateId === candidate.candidateId)
-          .sort((a, b) => b.confidence - a.confidence)[0];
-        return [candidate.candidateId, firstLink?.answerCandidateId];
-      }),
+      initialResult.candidates.map((candidate) => [
+        candidate.candidateId,
+        initialSelectedAnswerId(initialResult, candidate),
+      ]),
     );
   });
 
-  // Single-pass count instead of three separate .filter() calls
   const counts = result.candidates.reduce(
     (acc, c) => {
       if (c.reviewStatus === "adult-approved") acc.approved++;
@@ -106,9 +185,21 @@ export function ExtractionReview({
   );
 
   function promotionFormFor(candidate: ExtractionCandidate): PromotionForm {
-    return (
-      promotionForms[candidate.candidateId] ||
-      defaultPromotionForm(candidate, candidateTexts[candidate.candidateId] ?? candidate.ocrText)
+    if (promotionForms[candidate.candidateId]) return promotionForms[candidate.candidateId];
+
+    const answerCandidateId = selectedAnswers[candidate.candidateId];
+    const answer = answerCandidatesForCandidate(result, candidate).find(
+      (item) => item.answerCandidateId === answerCandidateId,
+    );
+    const link = (result.answerLinks ?? []).find(
+      (item) => item.candidateId === candidate.candidateId && item.answerCandidateId === answerCandidateId,
+    );
+    return defaultPromotionForm(
+      candidate,
+      candidateTexts[candidate.candidateId] ?? candidate.ocrText,
+      answerCandidateId,
+      answer,
+      link,
     );
   }
 
@@ -116,7 +207,6 @@ export function ExtractionReview({
     setPromotionForms((current) => {
       const candidate = result.candidates.find((item) => item.candidateId === candidateId);
       if (!candidate) return current;
-      // Use current (updater arg) rather than outer closure to avoid stale reads
       const existing =
         current[candidateId] ??
         defaultPromotionForm(candidate, candidateTexts[candidateId] ?? candidate.ocrText);
@@ -126,12 +216,17 @@ export function ExtractionReview({
 
   function selectAnswerCandidate(candidate: ExtractionCandidate, answerCandidateId: string | undefined) {
     setSelectedAnswers((current) => ({ ...current, [candidate.candidateId]: answerCandidateId }));
-    const answer = result.answerCandidates?.find((item) => item.answerCandidateId === answerCandidateId);
+    
+    const answer = answerCandidatesForCandidate(result, candidate).find(
+      (item) => item.answerCandidateId === answerCandidateId,
+    );
     const link = result.answerLinks?.find(
       (item) => item.candidateId === candidate.candidateId && item.answerCandidateId === answerCandidateId,
     );
-    const suggested = bestAnswerSuggestion(link, answer);
-    const value = answerTextFromSuggestion(suggested) || answer?.ocrText.trim() || "";
+    
+    const questionText = candidateTexts[candidate.candidateId] ?? candidate.ocrText;
+    const value = answerValueFromSelection(questionText, answer, link);
+
     updatePromotionForm(candidate.candidateId, {
       answerCandidateId,
       ...(value ? { answerValue: value } : {}),
@@ -175,6 +270,7 @@ export function ExtractionReview({
         candidateId: candidate.candidateId,
       });
       setResult(updatedResult);
+      setRefreshCounter(c => c + 1);
       const updatedCandidate = updatedResult.candidates.find(
         (c) => c.candidateId === candidate.candidateId
       );
@@ -198,12 +294,41 @@ export function ExtractionReview({
     }
   }
 
-  async function promoteCandidate(candidate: ExtractionCandidate) {
+  async function promoteCandidate(candidate: ExtractionCandidate, splitItems: ProposedItem[] | null = null) {
     const form = promotionFormFor(candidate);
     setPromotingCandidateId(candidate.candidateId);
-    setImportError(null);
+    setCandidateFeedback((current) => {
+      const next = { ...current };
+      delete next[candidate.candidateId];
+      return next;
+    });
     try {
-      const question = await invoke<Question>("promote_extraction_candidate", {
+      if (splitItems && splitItems.length > 0) {
+        // QuestionSetとして昇格
+        await invoke("promote_extraction_candidate_to_set", {
+          input: {
+            sourceDocumentId,
+            candidateId: candidate.candidateId,
+            subject: form.subject,
+            unitId: form.unitId,
+            skillIds: form.skillIds.split(",").map((v) => v.trim()).filter(Boolean),
+            questionType: form.questionType,
+            presentationType: form.presentationType,
+            title: form.title,
+            body: form.body,
+            note: form.note,
+            answerCandidateId: form.answerCandidateId,
+            purposes: form.purposes.split(",").map((v) => v.trim()).filter(Boolean),
+            items: splitItems,
+          },
+        });
+        setCandidateFeedback((current) => ({
+          ...current,
+          [candidate.candidateId]: { type: 'success', message: 'QuestionSet と複数の小問に保存しました！' }
+        }));
+      } else {
+        // 単一Questionとして昇格
+        const question = await invoke<Question>("promote_extraction_candidate", {
         input: {
           sourceDocumentId,
           candidateId: candidate.candidateId,
@@ -222,8 +347,16 @@ export function ExtractionReview({
         },
       });
       setPromotedQuestionIds((current) => [...new Set([...current, question.id])]);
+      setCandidateFeedback((current) => ({
+        ...current,
+        [candidate.candidateId]: { type: 'success', message: 'Question JSON に保存しました！' }
+      }));
+      }
     } catch (caught) {
-      setImportError(String(caught));
+      setCandidateFeedback((current) => ({
+        ...current,
+        [candidate.candidateId]: { type: 'error', message: `保存エラー: ${String(caught)}` }
+      }));
     } finally {
       setPromotingCandidateId(null);
     }
@@ -253,30 +386,29 @@ export function ExtractionReview({
 
       <div className="candidate-list">
         {result.candidates.map((candidate) => {
-          // Compute form once per candidate — used for both form prop and isPromoted check
           const form = promotionFormFor(candidate);
           const answerLinks = (result.answerLinks ?? [])
             .filter((link) => link.candidateId === candidate.candidateId)
             .sort((a, b) => b.confidence - a.confidence);
-          const linkedAnswerIds = new Set(answerLinks.map((link) => link.answerCandidateId));
-          const answerCandidates = (result.answerCandidates ?? [])
-            .filter((answer) => linkedAnswerIds.has(answer.answerCandidateId))
-            .sort((a, b) => {
-              const aLink = answerLinks.find((link) => link.answerCandidateId === a.answerCandidateId);
-              const bLink = answerLinks.find((link) => link.answerCandidateId === b.answerCandidateId);
-              return (bLink?.confidence ?? b.confidence) - (aLink?.confidence ?? a.confidence);
-            });
-          const selectedAnswerId = selectedAnswers[candidate.candidateId] ?? answerCandidates[0]?.answerCandidateId;
+          const answerCandidates = answerCandidatesForCandidate(result, candidate);
+          const selectedAnswerId = selectedAnswers[candidate.candidateId];
           const selectedAnswer = answerCandidates.find((answer) => answer.answerCandidateId === selectedAnswerId);
           const selectedLink = answerLinks.find((link) => link.answerCandidateId === selectedAnswerId);
-          const selectedSuggestion = bestAnswerSuggestion(selectedLink, selectedAnswer);
-          const questionImageUrl = artifactImageUrl(extractionPath, sourceDocumentId, candidate.regionImagePath);
+          const selectedSuggestion = selectedLink?.suggestedAnswer ?? selectedAnswer?.suggestedAnswer;
+          const questionImageUrl = artifactImageUrl(extractionPath, sourceDocumentId, candidate.regionImagePath, refreshCounter);
           const answerImageUrl = artifactImageUrl(
             extractionPath,
             sourceDocumentId,
             selectedAnswer?.regionImagePath,
+            refreshCounter,
           );
           const requiresAnswerPair = (result.answerCandidates?.length ?? 0) > 0;
+          const answerSummary = answerSourceLabel({
+            selectedAnswer,
+            answerValue: form.answerValue,
+            requiresAnswerPair,
+          });
+          const answerPreview = form.answerValue.trim();
           return (
             <details
               className={`candidate-card ${candidate.reviewStatus}`}
@@ -289,6 +421,10 @@ export function ExtractionReview({
                 </strong>
                 <span>{candidate.suggestedQuestionType}</span>
                 <span>信頼度 {Math.round(candidate.confidence * 100)}%</span>
+                <span className={`answer-summary ${answerSummary.kind}`}>
+                  {answerSummary.text}
+                  {answerPreview ? `: ${answerPreview.slice(0, 24)}` : ""}
+                </span>
                 <em>
                   {candidate.reviewStatus === "adult-approved"
                     ? "承認済み"
@@ -325,6 +461,7 @@ export function ExtractionReview({
                         value={selectedAnswerId ?? ""}
                         onChange={(event) => selectAnswerCandidate(candidate, event.currentTarget.value || undefined)}
                       >
+                        <option value="">（解答画像を選択しない）</option>
                         {answerCandidates.map((answer, index) => (
                           <option key={answer.answerCandidateId} value={answer.answerCandidateId}>
                             {labelForAnswer(answer, index)}
@@ -343,7 +480,7 @@ export function ExtractionReview({
                       {questionImageUrl ? (
                         <img src={questionImageUrl} alt={`問題候補 ${candidate.candidateId}`} />
                       ) : (
-                        <p className="pair-empty">問題の切り出し画像がありません。</p>
+                        <SourceRegionImage item={{ documentId: sourceDocumentId, page: candidate.page, region: candidate.region }} />
                       )}
                       <pre>{candidateTexts[candidate.candidateId] ?? candidate.ocrText}</pre>
                     </article>
@@ -361,6 +498,8 @@ export function ExtractionReview({
                       </div>
                       {answerImageUrl ? (
                         <img src={answerImageUrl} alt={`解答候補 ${selectedAnswer?.answerCandidateId ?? ""}`} />
+                      ) : selectedAnswer ? (
+                        <SourceRegionImage item={{ documentId: sourceDocumentId, page: selectedAnswer.page, region: selectedAnswer.region }} />
                       ) : (
                         <p className="pair-empty">解答の切り出し画像がありません。</p>
                       )}
