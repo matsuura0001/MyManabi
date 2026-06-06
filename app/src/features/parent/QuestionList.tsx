@@ -1,5 +1,7 @@
+import { useState } from "react";
 import type { Question } from "../../domain/question";
 import type { QuestionSet } from "../../domain/questionSet";
+import { AnswerExpansionPanel } from "./AnswerExpansionPanel";
 
 type QuestionListProps = {
   loading: boolean;
@@ -57,6 +59,19 @@ function setTitle(set: QuestionSet, questionsById: Map<string, Question>) {
   return firstQuestion ? `${firstQuestion.title} ほか` : set.id;
 }
 
+/** Client-side pre-check: does this answer value match any expansion rule? */
+function hasExpansionCandidates(question: Question): boolean {
+  const val = question.answer.value;
+  if (!val) return false;
+  // remainder-r-to-japanese
+  if (/(?<![a-zA-Z])\d+\s*[rR]\s*\d+(?![a-zA-Z])/.test(val)) return true;
+  // fraction-to-japanese: N/M where N, M < 100 (avoids dates/URLs)
+  if (/(?<![:/])\b(\d{1,2})\/(\d{1,2})\b/.test(val)) return true;
+  // trailing-zero-decimal: e.g. 3.0 or 5.00
+  if (/\d+\.0+$/.test(val.trim())) return true;
+  return false;
+}
+
 export function QuestionList({
   loading,
   questions,
@@ -66,6 +81,8 @@ export function QuestionList({
   error,
   refresh,
 }: QuestionListProps) {
+  const [expandingId, setExpandingId] = useState<string | null>(null);
+
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const questionsById = new Map(questions.map((question) => [question.id, question]));
   const filteredQuestions = questions.filter((question) => {
@@ -93,6 +110,8 @@ export function QuestionList({
       .join(" ");
     return `${set.id} ${set.source.type} ${childText}`.toLocaleLowerCase().includes(normalizedQuery);
   });
+
+  const needsExpansionCount = questions.filter(hasExpansionCandidates).length;
 
   return (
     <section className="parent-card question-list-card" id="parent-question-list">
@@ -124,6 +143,13 @@ export function QuestionList({
         </div>
       </div>
 
+      {needsExpansionCount > 0 && !normalizedQuery && (
+        <div className="expansion-notice">
+          <span className="expansion-notice-badge">{needsExpansionCount}</span>
+          問の答えに展開候補があります。各問題の「答え展開候補」ボタンで確認できます。
+        </div>
+      )}
+
       {error && <p className="question-list-error">{error}</p>}
       {loading && <p className="question-list-empty">問題を読み込んでいます。</p>}
 
@@ -154,33 +180,74 @@ export function QuestionList({
         <div className="question-list-section">
           <strong>単問</strong>
           <div className="question-list">
-            {filteredQuestions.map((question) => (
-              <article className="question-list-item" key={question.id}>
-                <div>
-                  <h3>{question.title}</h3>
-                  <p>{questionPreview(question)}</p>
-                  <small>{question.id}</small>
-                </div>
-                <dl>
+            {filteredQuestions.map((question) => {
+              const needsExpansion = hasExpansionCandidates(question);
+              const isExpanding = expandingId === question.id;
+              return (
+                <article
+                  className={`question-list-item${isExpanding ? " question-list-item--expanding" : ""}`}
+                  key={question.id}
+                >
                   <div>
-                    <dt>教科</dt>
-                    <dd>{question.subject}</dd>
+                    <h3>{question.title}</h3>
+                    <p>{questionPreview(question)}</p>
+                    <small>{question.id}</small>
+                    {needsExpansion && !isExpanding && (
+                      <button
+                        type="button"
+                        className="expansion-trigger"
+                        onClick={() => setExpandingId(question.id)}
+                      >
+                        答え展開候補を確認
+                      </button>
+                    )}
                   </div>
-                  <div>
-                    <dt>単元</dt>
-                    <dd>{question.unitId}</dd>
-                  </div>
-                  <div>
-                    <dt>出典</dt>
-                    <dd>{sourceLabel(question.source.type)}</dd>
-                  </div>
-                  <div>
-                    <dt>状態</dt>
-                    <dd>{statusLabel(question.reviewStatus)}</dd>
-                  </div>
-                </dl>
-              </article>
-            ))}
+                  <dl>
+                    <div>
+                      <dt>教科</dt>
+                      <dd>{question.subject}</dd>
+                    </div>
+                    <div>
+                      <dt>単元</dt>
+                      <dd>{question.unitId}</dd>
+                    </div>
+                    <div>
+                      <dt>出典</dt>
+                      <dd>{sourceLabel(question.source.type)}</dd>
+                    </div>
+                    <div>
+                      <dt>状態</dt>
+                      <dd>{statusLabel(question.reviewStatus)}</dd>
+                    </div>
+                    {question.answer.value && (
+                      <div>
+                        <dt>答え</dt>
+                        <dd className="answer-value-cell">
+                          {question.answer.value}
+                          {question.answer.acceptedAnswers?.length ? (
+                            <span className="answer-accepted-count">
+                              +{question.answer.acceptedAnswers.length}
+                            </span>
+                          ) : null}
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                  {isExpanding && (
+                    <div className="expansion-panel-wrapper">
+                      <AnswerExpansionPanel
+                        question={question}
+                        onClose={() => setExpandingId(null)}
+                        onSaved={async () => {
+                          setExpandingId(null);
+                          await refresh();
+                        }}
+                      />
+                    </div>
+                  )}
+                </article>
+              );
+            })}
           </div>
         </div>
       )}

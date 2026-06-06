@@ -56,6 +56,9 @@ pub struct Answer {
     pub rubric: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// Additional accepted answer forms chosen by the reviewer.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accepted_answers: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -195,6 +198,32 @@ pub fn load_approved_questions_by_ids(
         }
     }
     Ok(questions)
+}
+
+/// Update only the answer fields of an existing question (value + acceptedAnswers).
+/// The rest of the question is preserved as-is.
+pub fn update_question_answer(
+    data_dir: &Path,
+    question_id: &str,
+    answer_value: &str,
+    accepted_answers: Vec<String>,
+) -> Result<(), String> {
+    validate_question_id(question_id)?;
+    let path = data_dir
+        .join("content")
+        .join("questions")
+        .join(format!("{question_id}.json"));
+    let text = fs::read_to_string(&path)
+        .map_err(|error| format!("read question {question_id}: {error}"))?;
+    let mut question: Question = serde_json::from_str(&text)
+        .map_err(|error| format!("parse question {question_id}: {error}"))?;
+    question.answer.value = Some(answer_value.to_owned());
+    question.answer.accepted_answers = accepted_answers;
+    let bytes = serde_json::to_vec_pretty(&question)
+        .map_err(|error| format!("serialize question {question_id}: {error}"))?;
+    fs::write(&path, bytes)
+        .map_err(|error| format!("write question {}: {error}", path.display()))?;
+    Ok(())
 }
 
 pub fn save_approved_question(data_dir: &Path, question: &Question) -> Result<Question, String> {
@@ -582,6 +611,7 @@ mod tests {
                 transcript: None,
                 rubric: None,
                 tags: Vec::new(),
+                accepted_answers: Vec::new(),
             },
             source_mapping: None,
             source: Source {
@@ -659,6 +689,7 @@ mod tests {
                 transcript: None,
                 rubric: None,
                 tags: vec!["right-angle".to_owned()],
+                accepted_answers: Vec::new(),
             },
             source_mapping: Some(SourceMapping {
                 question_region_id: Some("qreg-001".to_owned()),

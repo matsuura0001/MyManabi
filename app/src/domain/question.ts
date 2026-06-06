@@ -39,6 +39,18 @@ export type QuestionSourceType = "adult-authored" | "ai-generated" | "local-gene
 export type QuestionReviewStatus = "draft" | "adult-approved" | "auto-approved" | "suspended";
 export type QuestionPurpose = "learning" | "review" | "assessment";
 
+export type AnswerExpansionCandidate = {
+  value: string;
+};
+
+export type AnswerExpansionOutcome = {
+  ruleId: string;
+  ruleName: string;
+  ruleDescription: string;
+  originalValue: string;
+  candidates: AnswerExpansionCandidate[];
+};
+
 export type SpikeOutcome = {
   accountEmail: string | null;
   planType: string | null;
@@ -73,6 +85,7 @@ export type Question = {
   answer: {
     type: AnswerType;
     value?: string;
+    acceptedAnswers?: string[];
     textValue?: string;
     documentId?: string;
     page?: number;

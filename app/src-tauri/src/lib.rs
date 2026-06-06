@@ -1,4 +1,5 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+pub mod answer_expand;
 pub mod answer_split;
 pub mod codex;
 pub mod domain;
@@ -411,6 +412,7 @@ fn promote_extraction_candidate(
             transcript: None,
             rubric: None,
             tags: Vec::new(),
+            accepted_answers: Vec::new(),
         },
         source_mapping: answer_candidate.as_ref().map(|answer| question_bank::SourceMapping {
             question_region_id: Some(candidate.candidate_id.clone()),
@@ -566,6 +568,7 @@ fn promote_extraction_candidate_to_set(
                 transcript: None,
                 rubric: None,
                 tags: Vec::new(),
+                accepted_answers: Vec::new(),
             },
             source_mapping: answer_candidate.as_ref().map(|answer| question_bank::SourceMapping {
                 question_region_id: Some(candidate.candidate_id.clone()),
@@ -681,6 +684,24 @@ fn apply_local_split_rules(answer_text: String) -> answer_split::LocalSplitOutco
 }
 
 #[tauri::command]
+fn apply_answer_expansion_rules(
+    answer_value: String,
+) -> Vec<answer_expand::AnswerExpansionOutcome> {
+    answer_expand::apply_expansion_rules(&answer_value)
+}
+
+#[tauri::command]
+fn update_question_answer(
+    data_dir: Option<String>,
+    question_id: String,
+    answer_value: String,
+    accepted_answers: Vec<String>,
+) -> Result<(), String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    question_bank::update_question_answer(&data_dir, &question_id, &answer_value, accepted_answers)
+}
+
+#[tauri::command]
 fn save_answer_split_evaluation(
     data_dir: Option<String>,
     case: evaluation_harness::AnswerSplitEvaluationCase,
@@ -724,7 +745,9 @@ pub fn run() {
             save_question_set,
             split_answer_text,
             apply_local_split_rules,
-            save_answer_split_evaluation
+            save_answer_split_evaluation,
+            apply_answer_expansion_rules,
+            update_question_answer
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

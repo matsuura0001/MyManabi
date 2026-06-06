@@ -936,6 +936,177 @@ h2 {
   color: #94483d;
 }
 
+/* ---- answer expansion notice (top of question list) ---- */
+
+.expansion-notice {
+  align-items: center;
+  background: #fffbec;
+  border: 1px solid #e8d89a;
+  border-radius: 8px;
+  color: #5a4d1a;
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.expansion-notice-badge {
+  background: #e8a800;
+  border-radius: 99px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 20px;
+  padding: 3px 7px;
+  text-align: center;
+}
+
+/* ---- expansion trigger button inside question row ---- */
+
+.expansion-trigger {
+  background: #eef7f1;
+  border: 1px solid #a8d4ba;
+  border-radius: 6px;
+  color: #2a6046;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 6px;
+  padding: 4px 10px;
+}
+
+.expansion-trigger:hover {
+  background: #d9f0e3;
+}
+
+/* ---- answer value cell in question dl ---- */
+
+.answer-value-cell {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.answer-accepted-count {
+  background: #e2f1e8;
+  border-radius: 99px;
+  color: #315e51;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+}
+
+/* ---- question-list-item expanding state ---- */
+
+.question-list-item--expanding {
+  border-color: #a8d4ba;
+  grid-template-columns: 1fr;
+}
+
+/* ---- expansion panel ---- */
+
+.expansion-panel-wrapper {
+  border-top: 1px solid #d0e8da;
+  margin-top: 8px;
+  padding-top: 12px;
+}
+
+.expansion-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.expansion-panel-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.expansion-panel-rule {
+  color: #2a6046;
+  font-size: 14px;
+}
+
+.expansion-panel-description {
+  color: #60716b;
+  font-size: 12px;
+  margin: 2px 0 0;
+}
+
+.expansion-panel-original {
+  color: #60716b;
+  font-size: 13px;
+  margin: 0;
+}
+
+.expansion-panel-original code {
+  background: #f0ede4;
+  border-radius: 4px;
+  font-size: 13px;
+  padding: 1px 5px;
+}
+
+.expansion-panel-loading,
+.expansion-panel-empty {
+  color: #71807b;
+  font-size: 13px;
+  margin: 0;
+}
+
+.expansion-panel-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  width: 100%;
+}
+
+.expansion-panel-table th {
+  color: #82908b;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.expansion-panel-table td {
+  border-top: 1px solid #ede8de;
+  padding: 6px 8px;
+  vertical-align: middle;
+}
+
+.expansion-row-original td {
+  background: #faf8f2;
+}
+
+.expansion-row-value {
+  color: #293a35;
+}
+
+.expansion-row-tag {
+  background: #e8e3d8;
+  border-radius: 4px;
+  color: #6b6150;
+  font-size: 11px;
+  margin-left: 6px;
+  padding: 1px 5px;
+}
+
+.expansion-panel-error {
+  background: #fff0ec;
+  border-radius: 6px;
+  color: #94483d;
+  font-size: 13px;
+  margin: 0;
+  padding: 6px 10px;
+}
+
+.expansion-panel-actions {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
 .import-card p {
   color: #71807b;
   line-height: 1.7;
