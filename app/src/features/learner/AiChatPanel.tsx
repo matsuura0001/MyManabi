@@ -50,6 +50,19 @@ export function AiChatPanel({ currentProblem, allQuestions, answers }: AiChatPan
       const set = currentProblem.data;
       contextText += `【大問】\n(複数の小問からなる問題セット)\n`;
       
+      set.questionMaterials?.forEach(m => {
+        if (m.imagePath) {
+          contextText += `(大問の画像も送信しました)\n`;
+          paths.push(m.imagePath);
+        }
+      });
+      set.answerMaterials?.forEach(m => {
+        if (m.imagePath) {
+          contextText += `(大問の解答画像も送信しました)\n`;
+          paths.push(m.imagePath);
+        }
+      });
+
       const expectedAnswers = questionSetExpectedAnswers(set, allQuestions);
       
       set.items.forEach((item, i) => {
