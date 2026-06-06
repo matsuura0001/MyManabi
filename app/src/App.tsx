@@ -11,6 +11,7 @@ import { VariantA } from "./features/learner/VariantA";
 import { VariantB } from "./features/learner/VariantB";
 import { ParentConsole } from "./features/parent/ParentConsole";
 import { AiChatPanel } from "./features/learner/AiChatPanel";
+import { parseAnswerLines } from "./features/learner/answerParser";
 import "./App.css";
 
 function App() {
@@ -230,29 +231,25 @@ function App() {
     } else {
       // QuestionSet: Parse the multi-line answer
       const fullAnswer = answers[currentProblem.data.id] || "";
-      const lines = fullAnswer.split('\n');
       const expectedAnswers = questionSetExpectedAnswers(currentProblem.data, allQuestions);
+      const orderedItems = [...currentProblem.data.items].sort((a, b) => (a.order || 0) - (b.order || 0));
+      const parsed = parseAnswerLines(fullAnswer, orderedItems);
       
-      for (let i = 0; i < currentProblem.data.items.length; i++) {
-        const item = currentProblem.data.items[i];
-        const q = allQuestions.find(q => q.id === item.questionId);
+      for (let i = 0; i < parsed.responses.length; i++) {
+        const ansId = parsed.responses[i].questionId;
+        const ansValue = parsed.responses[i].value;
+        const q = allQuestions.find(q => q.id === ansId);
         if (q) {
-          const expected = expectedAnswers[i]?.value ?? "";
-          
-          // Try to extract answer from `問X [ ans ]` or fallback to the whole line
-          let ans = "";
-          const line = lines[i] || "";
-          const match = line.match(/\[(.*?)\]/);
-          if (match) {
-            ans = match[1].trim();
-          } else {
-            ans = line.replace(/^問\d+\s*/, '').trim();
-          }
-          
-          const isCorrect = ans === expected.trim();
-          newResults[item.questionId] = isCorrect ? "correct" : "incorrect";
-          sendLearningEvent(q.id, q.unitId || "", q.source?.templateId || "", ans, "text", "deterministic", isCorrect ? "correct" : "incorrect");
+          const expected = expectedAnswers.find(e => e.questionId === ansId)?.value ?? "";
+          const isCorrect = ansValue === expected.trim();
+          newResults[ansId] = isCorrect ? "correct" : "incorrect";
+          sendLearningEvent(q.id, q.unitId || "", q.source?.templateId || "", ansValue, "text", "deterministic", isCorrect ? "correct" : "incorrect");
         }
+      }
+      
+      if (parsed.extraLines.length > 0) {
+        console.warn("Extra lines detected and ignored:", parsed.extraLines);
+        setNotice(`回答行数が問題数より多いため、超過分（${parsed.extraLines.length}行）は採点対象外となりました。`);
       }
     }
     

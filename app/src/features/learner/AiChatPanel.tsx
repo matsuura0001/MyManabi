@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { SpikeOutcome, Question } from "../../domain/question";
 import type { PlayableItem } from "./types";
 import { expectedAnswerForQuestion, questionSetExpectedAnswers } from "../../domain/importReview.mjs";
+import { parseAnswerLines } from "./answerParser";
 
 type AiChatPanelProps = {
   currentProblem: PlayableItem | undefined;
@@ -64,8 +65,10 @@ export function AiChatPanel({ currentProblem, allQuestions, answers }: AiChatPan
       });
 
       const expectedAnswers = questionSetExpectedAnswers(set, allQuestions);
+      const orderedItems = [...set.items].sort((a, b) => (a.order || 0) - (b.order || 0));
+      const parsedAnswers = parseAnswerLines(answers[set.id] || "", orderedItems);
       
-      set.items.forEach((item, i) => {
+      orderedItems.forEach((item, i) => {
         const q = allQuestions.find(x => x.id === item.questionId);
         if (q) {
           contextText += `\n--- 小問 ${i + 1} ---\n`;
@@ -76,16 +79,17 @@ export function AiChatPanel({ currentProblem, allQuestions, answers }: AiChatPan
             contextText += `(画像も送信しました)\n`;
             paths.push(q.presentation.imagePath);
           }
-          const expected = expectedAnswers[i]?.value ?? "";
+          const expected = expectedAnswers.find(e => e.questionId === item.questionId)?.value ?? "";
           contextText += `想定解: ${expected}\n`;
-          const fullAnswer = answers[set.id] || "";
-          const lines = fullAnswer.split('\n');
-          const userAnswer = lines[i];
+          const userAnswer = parsedAnswers.responses.find(r => r.questionId === item.questionId)?.value;
           if (userAnswer !== undefined && userAnswer.trim() !== "") {
              contextText += `学習者の解答 (該当箇所): ${userAnswer}\n`;
           }
         }
       });
+      if (parsedAnswers.extraLines.length > 0) {
+         contextText += `\n学習者の超過回答 (対象外): ${parsedAnswers.extraLines.join(', ')}\n`;
+      }
     }
 
     askAi("この問題の解説と、私の解答がなぜ間違っているか（合っているか）を教えてください。", contextText, paths);

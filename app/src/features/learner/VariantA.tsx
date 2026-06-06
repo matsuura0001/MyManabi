@@ -2,6 +2,7 @@ import { Header } from "../../components/Header";
 import { FeedbackBanner } from "../../components/FeedbackBanner";
 import type { LearnerProps } from "./types";
 import { SourceRegionImage, AnswerEvidence, answerLabel, QuestionPresentation, responseLabel } from "./QuestionMedia";
+import { LineGutterTextarea } from "../../components/LineGutterTextarea";
 
 export function VariantA(props: LearnerProps) {
   const currentLearner = props.learners.find(l => l.id === props.currentLearnerId);
@@ -9,9 +10,10 @@ export function VariantA(props: LearnerProps) {
   const isSingle = props.playableItem.type === "single";
   const singleData: any = isSingle ? props.playableItem.data : null;
   const setData: any = !isSingle ? props.playableItem.data : null;
+  const orderedItems = setData?.items ? [...setData.items].sort((a: any, b: any) => (a.order || 0) - (b.order || 0)) : [];
   
   // 共通のメタデータ
-  const firstQuestionId = setData?.items?.[0]?.questionId;
+  const firstQuestionId = orderedItems[0]?.questionId;
   const setQuestionTitle = firstQuestionId ? props.getQuestionTitle(firstQuestionId) : undefined;
   const title = isSingle ? singleData.title : (
     setQuestionTitle || (setData?.source?.documentId && setData?.source?.page 
@@ -120,9 +122,9 @@ export function VariantA(props: LearnerProps) {
                       <p className="eyebrow">一括回答を記録しました</p>
                       <h2>
                         {(() => {
-                          const correctCount = setData.items.filter((item: any) => props.feedbackResults[item.questionId] === "correct").length;
-                          const totalCount = setData.items.length;
-                          const dontKnowCount = setData.items.filter((item: any) => props.feedbackResults[item.questionId] === "dont-know").length;
+                          const correctCount = orderedItems.filter((item: any) => props.feedbackResults[item.questionId] === "correct").length;
+                          const totalCount = orderedItems.length;
+                          const dontKnowCount = orderedItems.filter((item: any) => props.feedbackResults[item.questionId] === "dont-know").length;
                           if (correctCount === totalCount) return "全問正解です！";
                           if (dontKnowCount === totalCount) return "正解はこちらです";
                           return `${totalCount}問中 ${correctCount}問正解です`;
@@ -188,18 +190,18 @@ export function VariantA(props: LearnerProps) {
                   </div>
                 ) : (
                   <div className="answer-row" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '0.5rem', flex: 1 }}>
-                    <label className="answer-box" style={{ width: '100%' }}>
-                      <textarea
-                        autoFocus
-                        style={{ width: '100%', minHeight: '150px' }}
-                        value={props.answers[setData.id] !== undefined ? props.answers[setData.id] : setData.items.map((_: any, index: number) => `問${index + 1} [   ]`).join('\n')}
-                        onChange={(event) => props.setAnswer(setData.id, event.currentTarget.value)}
-                        rows={Math.max(5, setData.items.length + 1)}
+                    <div className="answer-box" style={{ width: '100%' }}>
+                      <LineGutterTextarea
+                        labels={orderedItems.map((item: any, index: number) => item.label?.trim() || `問${index + 1}`)}
+                        value={props.answers[setData.id] || ""}
+                        onChange={(value) => props.setAnswer(setData.id, value)}
+                        minRows={Math.max(3, orderedItems.length)}
+                        autoFocus={true}
                       />
-                    </label>
+                    </div>
                     {props.feedbackVisible && props.feedbackStyle === "inline" && (
                       <div className="inline-feedback-mini" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                        {setData.items.map((item: any, index: number) => (
+                        {orderedItems.map((item: any, index: number) => (
                            <div key={item.questionId} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                              <span>問{index + 1}: </span>
                              <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: props.feedbackResults[item.questionId] === "correct" ? "green" : "red" }}>
