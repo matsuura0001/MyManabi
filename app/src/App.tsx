@@ -10,7 +10,7 @@ import type { PlayableItem } from "./features/learner/types";
 import { VariantA } from "./features/learner/VariantA";
 import { VariantB } from "./features/learner/VariantB";
 import { ParentConsole } from "./features/parent/ParentConsole";
-import { DeveloperSpike } from "./features/developer/DeveloperSpike";
+import { AiChatPanel } from "./features/learner/AiChatPanel";
 import "./App.css";
 
 function App() {
@@ -26,7 +26,7 @@ function App() {
   const feedbackStyle: FeedbackStyle = "sheet";
   const [feedbackVisible, setFeedbackVisible] = useState(false);
   const [feedbackResults, setFeedbackResults] = useState<Record<string, "correct" | "incorrect" | "dont-know">>({});
-  const [showDeveloperPanel, setShowDeveloperPanel] = useState(false);
+  const [showAiChatPanel, setShowAiChatPanel] = useState(false);
   const [problems, setProblems] = useState<PlayableItem[]>(fallbackProblems.map(q => ({ type: "single", data: q })));
   const [questionBankSource, setQuestionBankSource] = useState("ブラウザ用の合成問題");
   // 答え合わせ用にすべてのQuestionを保持しておく
@@ -327,13 +327,19 @@ function App() {
       )}
 
       <button
-        className="developer-toggle"
+        className="ai-chat-toggle"
         type="button"
-        onClick={() => setShowDeveloperPanel((value) => !value)}
+        onClick={() => setShowAiChatPanel((value) => !value)}
       >
-        {showDeveloperPanel ? "開発パネルを閉じる" : "開発パネル"}
+        {showAiChatPanel ? "AI への質問を閉じる" : "AI に 質問"}
       </button>
-      {showDeveloperPanel && <DeveloperSpike />}
+      {showAiChatPanel && (
+        <AiChatPanel 
+          currentProblem={currentProblem} 
+          allQuestions={allQuestions} 
+          answers={answers} 
+        />
+      )}
 
     </>
   );

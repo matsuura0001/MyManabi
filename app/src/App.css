@@ -1518,7 +1518,7 @@ h2 {
   color: #94483d !important;
 }
 
-.developer-toggle {
+.ai-chat-toggle {
   background: #364540;
   border: 0;
   border-radius: 10px 10px 0 0;
@@ -1531,11 +1531,12 @@ h2 {
   z-index: 22;
 }
 
-.developer-panel {
+.ai-chat-panel {
   background: #17231f;
   bottom: 36px;
   color: white;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   max-width: 440px;
   padding: 14px;
@@ -1545,17 +1546,31 @@ h2 {
   z-index: 21;
 }
 
-.developer-panel textarea,
-.spike-result {
+.ai-chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ai-chat-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ai-chat-panel textarea,
+.ai-chat-result pre {
   background: #26332f;
   border: 1px solid #465650;
   color: white;
   padding: 9px;
   white-space: pre-wrap;
+  margin: 0;
 }
 
-.developer-panel button {
-  justify-self: start;
+.ai-chat-meta {
+  font-size: 11px;
+  color: #8fa099;
+  margin-bottom: 4px;
 }
 
 .error {
