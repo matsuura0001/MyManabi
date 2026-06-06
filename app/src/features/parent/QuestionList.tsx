@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Question } from "../../domain/question";
 import type { QuestionSet } from "../../domain/questionSet";
 import { AnswerExpansionPanel } from "./AnswerExpansionPanel";
 import { QuestionSetDetailModal } from "./QuestionSetDetailModal";
 import { QuestionDetailModal } from "./QuestionDetailModal";
+import { sourceLabel, statusLabel } from "./labels";
 
 type QuestionListProps = {
   loading: boolean;
@@ -14,32 +15,6 @@ type QuestionListProps = {
   error: string | null;
   refresh: () => Promise<void>;
 };
-
-function sourceLabel(sourceType: Question["source"]["type"]) {
-  switch (sourceType) {
-    case "adult-authored":
-      return "手作成";
-    case "ai-generated":
-      return "AI生成";
-    case "local-generated":
-      return "端末生成";
-    case "imported":
-      return "取り込み";
-  }
-}
-
-function statusLabel(status: Question["reviewStatus"]) {
-  switch (status) {
-    case "adult-approved":
-      return "承認済み";
-    case "auto-approved":
-      return "自動承認";
-    case "draft":
-      return "下書き";
-    case "suspended":
-      return "停止中";
-  }
-}
 
 function questionPreview(question: Question) {
   if (question.body?.trim()) return question.body;
@@ -52,12 +27,12 @@ function questionPreview(question: Question) {
 }
 
 function setTitle(set: QuestionSet, questionsById: Map<string, Question>) {
-  const firstQuestion = set.items
-    .slice()
-    .sort((a, b) => a.order - b.order)
-    .map((item) => questionsById.get(item.questionId))
-    .find(Boolean);
-
+  // Find the item with the lowest order without sorting the whole array.
+  const firstItem = set.items.reduce<typeof set.items[0] | undefined>(
+    (min, item) => (min === undefined || item.order < min.order ? item : min),
+    undefined
+  );
+  const firstQuestion = firstItem && questionsById.get(firstItem.questionId);
   return firstQuestion ? `${firstQuestion.title} ほか` : set.id;
 }
 
@@ -88,34 +63,49 @@ export function QuestionList({
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const questionsById = new Map(questions.map((question) => [question.id, question]));
-  const filteredQuestions = questions.filter((question) => {
-    if (!normalizedQuery) return true;
-    return [
-      question.title,
-      question.body ?? "",
-      question.subject,
-      question.unitId,
-      question.questionType,
-      question.reviewStatus,
-      question.source.type,
-      question.id,
-    ]
-      .join(" ")
-      .toLocaleLowerCase()
-      .includes(normalizedQuery);
-  });
-  const filteredSets = questionSets.filter((set) => {
-    if (!normalizedQuery) return true;
-    const childText = set.items
-      .map((item) => questionsById.get(item.questionId))
-      .filter(Boolean)
-      .map((question) => `${question?.title} ${question?.body ?? ""}`)
-      .join(" ");
-    return `${set.id} ${set.source.type} ${childText}`.toLocaleLowerCase().includes(normalizedQuery);
-  });
-
-  const needsExpansionCount = questions.filter(hasExpansionCandidates).length;
+  const questionsById = useMemo(
+    () => new Map(questions.map((question) => [question.id, question])),
+    [questions]
+  );
+  const filteredQuestions = useMemo(
+    () =>
+      questions.filter((question) => {
+        if (!normalizedQuery) return true;
+        return [
+          question.title,
+          question.body ?? "",
+          question.subject,
+          question.unitId,
+          question.questionType,
+          question.reviewStatus,
+          question.source.type,
+          question.id,
+        ]
+          .join(" ")
+          .toLocaleLowerCase()
+          .includes(normalizedQuery);
+      }),
+    [questions, normalizedQuery]
+  );
+  const filteredSets = useMemo(
+    () =>
+      questionSets.filter((set) => {
+        if (!normalizedQuery) return true;
+        const childText = set.items
+          .map((item) => questionsById.get(item.questionId))
+          .filter(Boolean)
+          .map((question) => `${question?.title} ${question?.body ?? ""}`)
+          .join(" ");
+        return `${set.id} ${set.source.type} ${childText}`
+          .toLocaleLowerCase()
+          .includes(normalizedQuery);
+      }),
+    [questionSets, questionsById, normalizedQuery]
+  );
+  const needsExpansionCount = useMemo(
+    () => (normalizedQuery ? 0 : questions.filter(hasExpansionCandidates).length),
+    [questions, normalizedQuery]
+  );
 
   return (
     <section className="parent-card question-list-card" id="parent-question-list">
@@ -185,16 +175,6 @@ export function QuestionList({
                     {set.items.length} 問 / {sourceLabel(set.source.type)}
                   </p>
                   <small>{set.id}</small>
-                  <button
-                    type="button"
-                    className="detail-trigger"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedSetId(set.id);
-                    }}
-                  >
-                    詳細を確認
-                  </button>
                 </div>
               </article>
             ))}

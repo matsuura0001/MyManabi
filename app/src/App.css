@@ -2322,19 +2322,3 @@ h2 {
   text-align: center;
 }
 
-.answer-image-view-button {
-  background: none;
-  border: 1px solid #d8d0c0;
-  border-radius: 6px;
-  color: #315e51;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 6px 12px;
-  transition: all 0.2s ease;
-}
-
-.answer-image-view-button:hover {
-  background: #e2f1e8;
-  border-color: #315e51;
-}
