@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Question } from "../../domain/question";
 import type { QuestionSet } from "../../domain/questionSet";
 import { AnswerExpansionPanel } from "./AnswerExpansionPanel";
@@ -49,6 +49,8 @@ function hasExpansionCandidates(question: Question): boolean {
   return false;
 }
 
+const ITEMS_PER_PAGE = 50;
+
 export function QuestionList({
   loading,
   questions,
@@ -61,6 +63,25 @@ export function QuestionList({
   const [expandingId, setExpandingId] = useState<string | null>(null);
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
+  
+  const [questionsPage, setQuestionsPage] = useState(1);
+  const [setsPage, setSetsPage] = useState(1);
+  const [subjectFilter, setSubjectFilter] = useState("");
+  const [unitFilter, setUnitFilter] = useState("");
+
+  const subjects = useMemo(
+    () => Array.from(new Set(questions.map((q) => q.subject))).filter(Boolean),
+    [questions]
+  );
+  const units = useMemo(
+    () => Array.from(new Set(questions.map((q) => q.unitId))).filter(Boolean),
+    [questions]
+  );
+
+  useEffect(() => {
+    setQuestionsPage(1);
+    setSetsPage(1);
+  }, [query, subjectFilter, unitFilter]);
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const questionsById = useMemo(
@@ -70,6 +91,8 @@ export function QuestionList({
   const filteredQuestions = useMemo(
     () =>
       questions.filter((question) => {
+        if (subjectFilter && question.subject !== subjectFilter) return false;
+        if (unitFilter && question.unitId !== unitFilter) return false;
         if (!normalizedQuery) return true;
         return [
           question.title,
@@ -85,11 +108,21 @@ export function QuestionList({
           .toLocaleLowerCase()
           .includes(normalizedQuery);
       }),
-    [questions, normalizedQuery]
+    [questions, normalizedQuery, subjectFilter, unitFilter]
   );
   const filteredSets = useMemo(
     () =>
       questionSets.filter((set) => {
+        if (subjectFilter || unitFilter) {
+          const hasMatchingQuestion = set.items.some((item) => {
+            const q = questionsById.get(item.questionId);
+            if (!q) return false;
+            if (subjectFilter && q.subject !== subjectFilter) return false;
+            if (unitFilter && q.unitId !== unitFilter) return false;
+            return true;
+          });
+          if (!hasMatchingQuestion) return false;
+        }
         if (!normalizedQuery) return true;
         const childText = set.items
           .map((item) => questionsById.get(item.questionId))
@@ -100,12 +133,25 @@ export function QuestionList({
           .toLocaleLowerCase()
           .includes(normalizedQuery);
       }),
-    [questionSets, questionsById, normalizedQuery]
+    [questionSets, questionsById, normalizedQuery, subjectFilter, unitFilter]
   );
   const needsExpansionCount = useMemo(
     () => (normalizedQuery ? 0 : questions.filter(hasExpansionCandidates).length),
     [questions, normalizedQuery]
   );
+
+  const paginatedSets = useMemo(() => {
+    const start = (setsPage - 1) * ITEMS_PER_PAGE;
+    return filteredSets.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredSets, setsPage]);
+
+  const paginatedQuestions = useMemo(() => {
+    const start = (questionsPage - 1) * ITEMS_PER_PAGE;
+    return filteredQuestions.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredQuestions, questionsPage]);
+
+  // TODO: 将来的には、親コンポーネントが questions を全件メモリに抱える設計自体を見直し、バックエンド連携によるサーバサイドページネーションへの移行を検討する
+
 
   return (
     <section className="parent-card question-list-card" id="parent-question-list">
@@ -128,6 +174,24 @@ export function QuestionList({
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
           />
+        </label>
+        <label>
+          <span>教科</span>
+          <select value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)}>
+            <option value="">すべて</option>
+            {subjects.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>単元</span>
+          <select value={unitFilter} onChange={(e) => setUnitFilter(e.target.value)}>
+            <option value="">すべて</option>
+            {units.map((u) => (
+              <option key={u} value={u}>{u}</option>
+            ))}
+          </select>
         </label>
         <div className="question-list-counts" aria-live="polite">
           <strong>{questions.length}</strong>
@@ -155,7 +219,7 @@ export function QuestionList({
         <div className="question-list-section">
           <strong>問題セット</strong>
           <div className="question-list">
-            {filteredSets.map((set) => (
+            {paginatedSets.map((set) => (
               <article
                 className="question-list-item set-item"
                 key={set.id}
@@ -179,6 +243,29 @@ export function QuestionList({
               </article>
             ))}
           </div>
+          {filteredSets.length > ITEMS_PER_PAGE && (
+            <div className="question-list-pagination">
+              <button
+                type="button"
+                className="text-button"
+                disabled={setsPage === 1}
+                onClick={() => setSetsPage((p) => p - 1)}
+              >
+                前へ
+              </button>
+              <span>
+                {setsPage} / {Math.ceil(filteredSets.length / ITEMS_PER_PAGE)}
+              </span>
+              <button
+                type="button"
+                className="text-button"
+                disabled={setsPage >= Math.ceil(filteredSets.length / ITEMS_PER_PAGE)}
+                onClick={() => setSetsPage((p) => p + 1)}
+              >
+                次へ
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -186,7 +273,7 @@ export function QuestionList({
         <div className="question-list-section">
           <strong>単問</strong>
           <div className="question-list">
-            {filteredQuestions.map((question) => {
+            {paginatedQuestions.map((question) => {
               const needsExpansion = hasExpansionCandidates(question);
               const isExpanding = expandingId === question.id;
               return (
@@ -264,6 +351,29 @@ export function QuestionList({
               );
             })}
           </div>
+          {filteredQuestions.length > ITEMS_PER_PAGE && (
+            <div className="question-list-pagination">
+              <button
+                type="button"
+                className="text-button"
+                disabled={questionsPage === 1}
+                onClick={() => setQuestionsPage((p) => p - 1)}
+              >
+                前へ
+              </button>
+              <span>
+                {questionsPage} / {Math.ceil(filteredQuestions.length / ITEMS_PER_PAGE)}
+              </span>
+              <button
+                type="button"
+                className="text-button"
+                disabled={questionsPage >= Math.ceil(filteredQuestions.length / ITEMS_PER_PAGE)}
+                onClick={() => setQuestionsPage((p) => p + 1)}
+              >
+                次へ
+              </button>
+            </div>
+          )}
         </div>
       )}
 
