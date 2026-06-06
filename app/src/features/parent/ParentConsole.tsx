@@ -9,6 +9,9 @@ import { SummaryCard } from "../../components/SummaryCard";
 import { ImportHistory } from "./ImportHistory";
 import { ExtractionReview } from "./ExtractionReview";
 import { RegionPlanSelector } from "./RegionPlanSelector";
+import { QuestionList } from "./QuestionList";
+
+type ParentView = "today" | "questions";
 
 export function ParentConsole({
   variant,
@@ -17,6 +20,7 @@ export function ParentConsole({
   variant: Variant;
   setView: (view: View) => void;
 }) {
+  const [parentView, setParentView] = useState<ParentView>("today");
   const [suggestion, setSuggestion] = useState("分数のたし算 / 通分を含む問題");
   const [sent, setSent] = useState(false);
   const [pdfUrl, setPdfUrl] = useState("");
@@ -162,13 +166,47 @@ export function ParentConsole({
       {isSidebar && (
         <aside className="parent-sidebar">
           <strong>おうちの人</strong>
-          <a className="selected">今日の様子</a>
-          <a>確認問題</a>
+          <a
+            className={parentView === "today" ? "selected" : ""}
+            role="button"
+            tabIndex={0}
+            onClick={() => setParentView("today")}
+          >
+            今日の様子
+          </a>
+          <a
+            className={parentView === "questions" ? "selected" : ""}
+            role="button"
+            tabIndex={0}
+            onClick={() => setParentView("questions")}
+          >
+            問題一覧
+          </a>
           <a>学習パターン</a>
           <a>公開用レポート</a>
         </aside>
       )}
       <section className="parent-main">
+        {!isSidebar && (
+          <nav className="parent-tabs">
+            <button
+              className={parentView === "today" ? "parent-tab selected" : "parent-tab"}
+              type="button"
+              onClick={() => setParentView("today")}
+            >
+              今日の様子
+            </button>
+            <button
+              className={parentView === "questions" ? "parent-tab selected" : "parent-tab"}
+              type="button"
+              onClick={() => setParentView("questions")}
+            >
+              問題一覧
+            </button>
+          </nav>
+        )}
+        {parentView === "today" && (
+        <>
         <div className="parent-title">
           <div>
             <p className="eyebrow">あおい / 今日の学習</p>
@@ -329,6 +367,9 @@ export function ParentConsole({
           )}
           {importError && <p className="import-error">取り込めませんでした: {importError}</p>}
         </section>
+        </>
+        )}
+        {parentView === "questions" && <QuestionList />}
       </section>
     </main>
   );
