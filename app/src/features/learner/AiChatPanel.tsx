@@ -10,17 +10,23 @@ type AiChatPanelProps = {
   answers: Record<string, string>;
 };
 
+type Message = {
+  id: string;
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
 export function AiChatPanel({ currentProblem, allQuestions, answers }: AiChatPanelProps) {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [prompt, setPrompt] = useState("");
   const [imagePaths, setImagePaths] = useState<string[]>([]);
-  const [outcome, setOutcome] = useState<SpikeOutcome | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  function handleSetContext() {
+  function handleSetContextAndAsk() {
     if (!currentProblem) return;
     
-    let contextText = "以下の問題について質問します。\n\n";
+    let contextText = "以下の問題について解説をお願いします。\n\n";
     const paths: string[] = [];
 
     if (currentProblem.type === "single") {
@@ -42,8 +48,7 @@ export function AiChatPanel({ currentProblem, allQuestions, answers }: AiChatPan
       }
     } else {
       const set = currentProblem.data;
-      contextText += `【大問】\n`;
-      contextText += `(複数の小問からなる問題セット)\n`;
+      contextText += `【大問】\n(複数の小問からなる問題セット)\n`;
       
       const expectedAnswers = questionSetExpectedAnswers(set, allQuestions);
       
@@ -70,23 +75,37 @@ export function AiChatPanel({ currentProblem, allQuestions, answers }: AiChatPan
       });
     }
 
-    setPrompt((prev) => prev ? `${contextText}\n\n---\n\n${prev}` : `${contextText}\n\n`);
-    setImagePaths((prev) => {
-      const newPaths = [...prev];
-      for (const p of paths) {
-        if (!newPaths.includes(p)) newPaths.push(p);
-      }
-      return newPaths;
-    });
+    askAi("この問題の解説と、私の解答がなぜ間違っているか（合っているか）を教えてください。", contextText, paths);
   }
 
-  async function askAi() {
-    if (!prompt.trim()) return;
+  async function askAi(newMessageContent: string, contextText?: string, additionalImagePaths: string[] = []) {
+    if (!newMessageContent.trim() && !contextText) return;
+    
     setLoading(true);
     setError(null);
-    setOutcome(null);
+
+    const newMessages = [...messages];
+    if (contextText) {
+      newMessages.push({ id: crypto.randomUUID(), role: "system", content: contextText });
+    }
+    if (newMessageContent) {
+      newMessages.push({ id: crypto.randomUUID(), role: "user", content: newMessageContent });
+    }
+    setMessages(newMessages);
+    setPrompt("");
+
+    const currentImagePaths = Array.from(new Set([...imagePaths, ...additionalImagePaths]));
+    setImagePaths(currentImagePaths);
+
+    const fullPrompt = newMessages.map(m => {
+       if (m.role === "system") return `[System Context]\n${m.content}`;
+       if (m.role === "user") return `User: ${m.content}`;
+       return `Assistant: ${m.content}`;
+    }).join("\n\n");
+
     try {
-      setOutcome(await invoke<SpikeOutcome>("codex_spike", { prompt, imagePaths }));
+      const outcome = await invoke<SpikeOutcome>("codex_spike", { prompt: fullPrompt, imagePaths: currentImagePaths });
+      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: "assistant", content: outcome.problemText }]);
     } catch (caught) {
       setError(String(caught));
     } finally {
@@ -98,31 +117,44 @@ export function AiChatPanel({ currentProblem, allQuestions, answers }: AiChatPan
     <aside className="ai-chat-panel">
       <div className="ai-chat-header">
         <strong>AI に 質問</strong>
-        <button type="button" onClick={handleSetContext} disabled={!currentProblem}>
+        <button type="button" onClick={handleSetContextAndAsk} disabled={!currentProblem || loading}>
           この問題を AI に質問する
         </button>
       </div>
-      <textarea 
-        value={prompt} 
-        onChange={(event) => setPrompt(event.currentTarget.value)} 
-        rows={6} 
-        placeholder="AIへの質問を入力してください..."
-      />
-      <div className="ai-chat-actions">
-        <button type="button" onClick={askAi} disabled={loading || !prompt.trim()}>
-          {loading ? "送信中..." : "質問を送信"}
+
+      <div className="ai-chat-messages">
+        {messages.map(m => (
+          <div key={m.id} className={`ai-message-bubble ${m.role}`}>
+            {m.role === "system" ? (
+              <details>
+                <summary>送信された問題データ (クリックで表示)</summary>
+                <pre>{m.content}</pre>
+              </details>
+            ) : (
+              <pre>{m.content}</pre>
+            )}
+          </div>
+        ))}
+        {loading && <div className="ai-message-bubble loading">AIが回答を作成中...</div>}
+        {error && <div className="error">エラー: {error}</div>}
+      </div>
+
+      <div className="ai-chat-input-area">
+        <textarea 
+          value={prompt} 
+          onChange={(event) => setPrompt(event.currentTarget.value)} 
+          rows={2} 
+          placeholder="追加の質問を入力..."
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              askAi(prompt);
+            }
+          }}
+        />
+        <button type="button" onClick={() => askAi(prompt)} disabled={loading || !prompt.trim()}>
+          送信
         </button>
       </div>
-      {error && <pre className="error">エラー: {error}</pre>}
-      {outcome && (
-        <div className="ai-chat-result">
-          <div className="ai-chat-meta">
-            {outcome.accountEmail ?? "(不明)"} / {outcome.planType ?? "(不明)"} /{" "}
-            {outcome.model ?? "(既定モデル)"}
-          </div>
-          <pre className="ai-chat-text">{outcome.problemText}</pre>
-        </div>
-      )}
     </aside>
   );
 }
