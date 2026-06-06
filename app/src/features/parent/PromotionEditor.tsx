@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ExtractionCandidate, PromotionForm } from "../../domain/extraction";
-import type { ProposedItem, SplitOutcome, AnswerSplitEvaluationCase } from "../../domain/evaluation";
+import type {
+  ProposedItem,
+  SplitOutcome,
+  AnswerSplitEvaluationCase,
+  RuleSplitCandidate,
+  LocalSplitOutcome,
+} from "../../domain/evaluation";
 
 export function PromotionEditor({
   candidate,
@@ -22,12 +28,47 @@ export function PromotionEditor({
   const update = (patch: Partial<PromotionForm>) => updatePromotionForm(candidateId, patch);
   const [showAdvanced, setShowAdvanced] = useState(false);
   
-  // AI Split UI state
+  // Active split result
   const [isSplitting, setIsSplitting] = useState(false);
   const [splitItems, setSplitItems] = useState<ProposedItem[] | null>(null);
   const [unassignedText, setUnassignedText] = useState("");
-  const [originalSplitItems, setOriginalSplitItems] = useState<ProposedItem[] | null>(null);
   const [evaluationSaved, setEvaluationSaved] = useState(false);
+
+  // Split provenance — tracks where the current splitItems came from
+  const [splitSource, setSplitSource] = useState<"rule" | "ai" | "manual" | null>(null);
+  const [originalRuleItems, setOriginalRuleItems] = useState<ProposedItem[] | null>(null);
+  const [appliedRuleCandidate, setAppliedRuleCandidate] = useState<RuleSplitCandidate | null>(null);
+  const [originalAiItems, setOriginalAiItems] = useState<ProposedItem[] | null>(null);
+
+  // Rule-based split state
+  const [isRuleSplitting, setIsRuleSplitting] = useState(false);
+  const [ruleSplitCandidates, setRuleSplitCandidates] = useState<RuleSplitCandidate[] | null>(null);
+
+  const handleRuleSplit = async () => {
+    if (!form.answerValue.trim()) return;
+    setIsRuleSplitting(true);
+    setRuleSplitCandidates(null);
+    try {
+      const outcome = await invoke<LocalSplitOutcome>("apply_local_split_rules", {
+        answerText: form.answerValue,
+      });
+      setRuleSplitCandidates(outcome.candidates);
+    } catch (e) {
+      alert(`ルール分割に失敗しました: ${e}`);
+    } finally {
+      setIsRuleSplitting(false);
+    }
+  };
+
+  const adoptRuleCandidate = (candidate: RuleSplitCandidate) => {
+    setSplitItems(candidate.items);
+    setOriginalRuleItems(candidate.items);
+    setAppliedRuleCandidate(candidate);
+    setSplitSource("rule");
+    setUnassignedText(candidate.unassignedText);
+    setRuleSplitCandidates(null);
+    setEvaluationSaved(false);
+  };
 
   const handleAiSplit = async () => {
     if (!form.answerValue) return;
@@ -36,7 +77,8 @@ export function PromotionEditor({
     try {
       const outcome = await invoke<SplitOutcome>("split_answer_text", { answerText: form.answerValue });
       setSplitItems(outcome.items);
-      setOriginalSplitItems(outcome.items);
+      setOriginalAiItems(outcome.items);
+      setSplitSource("ai");
       setUnassignedText(outcome.unassignedText || "");
     } catch (e) {
       alert(`AI分割に失敗しました: ${e}`);
@@ -53,15 +95,19 @@ export function PromotionEditor({
   };
 
   const handleSaveEvaluation = async () => {
-    if (!splitItems || !originalSplitItems) return;
+    if (!splitItems) return;
+    const originalForSource = splitSource === "rule" ? originalRuleItems : originalAiItems;
+    const isUnmodified =
+      originalForSource !== null &&
+      JSON.stringify(originalForSource) === JSON.stringify(splitItems);
     const evaluationCase: AnswerSplitEvaluationCase = {
       id: `split-${candidateId}-${Date.now()}`,
       inputText: form.answerValue,
       expectedItemCount: splitItems.length,
-      ruleOutput: [], // ローカルルールは今回は省略
-      aiOutput: originalSplitItems,
+      ruleOutput: originalRuleItems ?? [],
+      aiOutput: originalAiItems ?? [],
       finalItems: splitItems,
-      status: "corrected"
+      status: isUnmodified ? "accepted" : splitSource ? "corrected" : "corrected",
     };
 
     try {
@@ -144,15 +190,10 @@ export function PromotionEditor({
             <button
               type="button"
               className="outline-button"
-              onClick={() => {
-                // 将来的にローカルルール分割処理をここに差し込む
-                // 例: const result = applyLocalSplitRules(form.answerValue);
-                // setSplitItems(result);
-                alert("ローカルルールでの自動分割は今後実装予定です");
-              }}
-              disabled={isSplitting || !form.answerValue.trim()}
+              onClick={handleRuleSplit}
+              disabled={isRuleSplitting || isSplitting || !form.answerValue.trim()}
             >
-              ルールで自動分割
+              {isRuleSplitting ? "検出中..." : "ルールで自動分割"}
             </button>
             <button 
               type="button" 
@@ -167,17 +208,88 @@ export function PromotionEditor({
               className="text-button"
               onClick={() => {
                 const current = splitItems || [];
-                setSplitItems([...current, { label: `問${current.length + 1}`, value: "", confidence: 1.0 }]);
-                if (!originalSplitItems) setOriginalSplitItems([...current, { label: `問${current.length + 1}`, value: "", confidence: 1.0 }]);
+                const newItem = { label: `問${current.length + 1}`, value: "", confidence: 1.0 };
+                setSplitItems([...current, newItem]);
+                if (!splitSource) setSplitSource("manual");
               }}
             >
               手動で小問を追加
             </button>
           </div>
           
+          {ruleSplitCandidates !== null && (
+            <div style={{ marginTop: '1rem', padding: '1rem', background: '#f0f4ff', borderRadius: '4px', border: '1px solid #c5d0e6' }}>
+              <strong>分割候補</strong>
+              {ruleSplitCandidates.length === 0 ? (
+                <div style={{ marginTop: '0.5rem' }}>
+                  <p style={{ color: '#555', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
+                    既知のパターンが見つかりませんでした。AI に分割を依頼しますか？
+                  </p>
+                  <button
+                    type="button"
+                    className="outline-button"
+                    disabled={isSplitting}
+                    onClick={() => {
+                      setRuleSplitCandidates(null);
+                      handleAiSplit();
+                    }}
+                  >
+                    {isSplitting ? "AIで分割中..." : "AIで小問に分割"}
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
+                  {ruleSplitCandidates.map((cand) => (
+                    <div
+                      key={cand.ruleId}
+                      style={{ background: '#fff', border: '1px solid #c5d0e6', borderRadius: '4px', padding: '0.75rem' }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.4rem' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{cand.ruleName}</span>
+                        <small style={{ color: '#666' }}>{cand.ruleDescription}</small>
+                      </div>
+                      <div style={{ display: 'grid', gap: '0.2rem', marginBottom: '0.6rem' }}>
+                        {cand.items.map((item) => (
+                          <span key={item.label} style={{ fontSize: '0.85rem', fontFamily: 'monospace' }}>
+                            {item.label}: <strong>{item.value || '（空）'}</strong>
+                          </span>
+                        ))}
+                        {cand.unassignedText && (
+                          <small style={{ color: '#888' }}>未割り当て: {cand.unassignedText}</small>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="small-button"
+                        onClick={() => adoptRuleCandidate(cand)}
+                      >
+                        この分割を採用
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ marginTop: '0.75rem' }}>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => setRuleSplitCandidates(null)}
+                  style={{ color: '#666', fontSize: '0.85rem' }}
+                >
+                  閉じる
+                </button>
+              </div>
+            </div>
+          )}
+
           {splitItems && (
             <div style={{ marginTop: '1rem', padding: '1rem', background: '#f8f9fa', borderRadius: '4px' }}>
               <strong>小問の確認と修正</strong>
+              {appliedRuleCandidate && (
+                <small style={{ marginLeft: '0.5rem', color: '#555' }}>
+                  （{appliedRuleCandidate.ruleName} 適用済み）
+                </small>
+              )}
               <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.5rem' }}>
                 {splitItems.map((item, i) => (
                   <label key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -232,7 +344,10 @@ export function PromotionEditor({
                   className="small-button text-button"
                   onClick={() => {
                     setSplitItems(null);
-                    setOriginalSplitItems(null);
+                    setOriginalRuleItems(null);
+                    setOriginalAiItems(null);
+                    setAppliedRuleCandidate(null);
+                    setSplitSource(null);
                     setUnassignedText("");
                   }}
                   style={{ color: '#d32f2f' }}

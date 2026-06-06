@@ -1,4 +1,5 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+pub mod answer_split;
 pub mod codex;
 pub mod domain;
 pub mod learning_event;
@@ -675,6 +676,11 @@ async fn split_answer_text(answer_text: String) -> Result<codex::SplitOutcome, S
 }
 
 #[tauri::command]
+fn apply_local_split_rules(answer_text: String) -> answer_split::LocalSplitOutcome {
+    answer_split::apply_local_split_rules(&answer_text)
+}
+
+#[tauri::command]
 fn save_answer_split_evaluation(
     data_dir: Option<String>,
     case: evaluation_harness::AnswerSplitEvaluationCase,
@@ -717,6 +723,7 @@ pub fn run() {
             load_question_sets,
             save_question_set,
             split_answer_text,
+            apply_local_split_rules,
             save_answer_split_evaluation
         ])
         .run(tauri::generate_context!())

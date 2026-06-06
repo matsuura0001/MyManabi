@@ -9,6 +9,20 @@ export interface SplitOutcome {
   unassignedText: string;
 }
 
+export interface RuleSplitCandidate {
+  ruleId: string;
+  ruleName: string;
+  ruleDescription: string;
+  /** "builtin" | "custom" | "ai-generated" */
+  source: string;
+  items: ProposedItem[];
+  unassignedText: string;
+}
+
+export interface LocalSplitOutcome {
+  candidates: RuleSplitCandidate[];
+}
+
 export interface AnswerSplitEvaluationCase {
   id: string;
   sourceDocumentId?: string;
