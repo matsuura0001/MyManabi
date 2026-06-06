@@ -2,6 +2,8 @@ import { useState } from "react";
 import type { Question } from "../../domain/question";
 import type { QuestionSet } from "../../domain/questionSet";
 import { AnswerExpansionPanel } from "./AnswerExpansionPanel";
+import { QuestionSetDetailModal } from "./QuestionSetDetailModal";
+import { QuestionDetailModal } from "./QuestionDetailModal";
 
 type QuestionListProps = {
   loading: boolean;
@@ -82,6 +84,8 @@ export function QuestionList({
   refresh,
 }: QuestionListProps) {
   const [expandingId, setExpandingId] = useState<string | null>(null);
+  const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
+  const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const questionsById = new Map(questions.map((question) => [question.id, question]));
@@ -162,13 +166,35 @@ export function QuestionList({
           <strong>問題セット</strong>
           <div className="question-list">
             {filteredSets.map((set) => (
-              <article className="question-list-item set-item" key={set.id}>
+              <article
+                className="question-list-item set-item"
+                key={set.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedSetId(set.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSelectedSetId(set.id);
+                  }
+                }}
+              >
                 <div>
                   <h3>{setTitle(set, questionsById)}</h3>
                   <p>
                     {set.items.length} 問 / {sourceLabel(set.source.type)}
                   </p>
                   <small>{set.id}</small>
+                  <button
+                    type="button"
+                    className="detail-trigger"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedSetId(set.id);
+                    }}
+                  >
+                    詳細を確認
+                  </button>
                 </div>
               </article>
             ))}
@@ -192,15 +218,24 @@ export function QuestionList({
                     <h3>{question.title}</h3>
                     <p>{questionPreview(question)}</p>
                     <small>{question.id}</small>
-                    {needsExpansion && !isExpanding && (
+                    <div className="question-actions">
                       <button
                         type="button"
-                        className="expansion-trigger"
-                        onClick={() => setExpandingId(question.id)}
+                        className="detail-trigger"
+                        onClick={() => setSelectedQuestionId(question.id)}
                       >
-                        答え展開候補を確認
+                        詳細を確認
                       </button>
-                    )}
+                      {needsExpansion && !isExpanding && (
+                        <button
+                          type="button"
+                          className="expansion-trigger"
+                          onClick={() => setExpandingId(question.id)}
+                        >
+                          答え展開候補を確認
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <dl>
                     <div>
@@ -250,6 +285,25 @@ export function QuestionList({
             })}
           </div>
         </div>
+      )}
+
+      {/* Modals */}
+      {selectedSetId && (
+        <QuestionSetDetailModal
+          questionSet={questionSets.find((s) => s.id === selectedSetId)!}
+          questions={questions}
+          onClose={() => setSelectedSetId(null)}
+        />
+      )}
+
+      {selectedQuestionId && (
+        <QuestionDetailModal
+          question={questions.find((q) => q.id === selectedQuestionId)!}
+          parentQuestionSet={questionSets.find(
+            (s) => s.items.some((item) => item.questionId === selectedQuestionId)
+          )}
+          onClose={() => setSelectedQuestionId(null)}
+        />
       )}
     </section>
   );
