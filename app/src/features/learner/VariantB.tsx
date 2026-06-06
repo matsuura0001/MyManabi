@@ -5,6 +5,20 @@ import { AnswerEvidence, QuestionPresentation, responseLabel } from "./QuestionM
 export function VariantB(props: LearnerProps) {
   const currentLearner = props.learners.find(l => l.id === props.currentLearnerId);
 
+  const isSingle = props.playableItem.type === "single";
+  const singleData: any = isSingle ? props.playableItem.data : null;
+  const setData: any = !isSingle ? props.playableItem.data : null;
+  const firstQuestionId = setData?.items?.[0]?.questionId;
+  const setQuestionTitle = firstQuestionId ? props.getQuestionTitle(firstQuestionId) : undefined;
+  const title = isSingle ? singleData.title : (
+    setQuestionTitle || (setData?.source?.documentId && setData?.source?.page 
+      ? `一括出題 (${setData.source.documentId} P${setData.source.page})` 
+      : "一括出題")
+  );
+  const subject = isSingle ? singleData.subject : "複合";
+  const skillIds = isSingle ? singleData.skillIds : [];
+  const note = isSingle ? singleData.note : undefined;
+
   return (
     <main className="app-shell home-shell">
       <Header view={props.view} setView={props.setView} />
@@ -32,41 +46,58 @@ export function VariantB(props: LearnerProps) {
               </div>
               <div className="side-meta">
                 <span>教科</span>
-                <strong>{props.problem.subject}</strong>
+                <strong>{subject}</strong>
               </div>
-              {props.problem.skillIds.length > 0 && (
+              {skillIds.length > 0 && (
                 <div className="side-meta">
                   <span>分類</span>
-                  <strong>{props.problem.skillIds.join(" / ")}</strong>
+                  <strong>{skillIds.join(" / ")}</strong>
                 </div>
               )}
-              {props.problem.note && <p className="side-note">{props.problem.note}</p>}
+              {note && <p className="side-note">{note}</p>}
             </div>
+
+            {props.todayStats && props.todayStats.attempted > 0 && (
+              <div className="side-card stats-card">
+                <div className="side-meta">
+                  <span>今日の記録</span>
+                  <strong>{props.todayStats.attempted} 問</strong>
+                </div>
+                <div className="side-meta" style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+                  <span style={{ color: 'green' }}>○ {props.todayStats.correct}</span>
+                  <span style={{ color: 'red' }}>× {props.todayStats.incorrect}</span>
+                </div>
+              </div>
+            )}
 
             {props.notice && <p className="side-notice side-card" role="status">{props.notice}</p>}
           </aside>
 
           <article className="split-problem">
             <div className="split-question">
-              <h2>{props.problem.title}</h2>
-              <QuestionPresentation question={props.problem} />
+              <h2 title={title} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h2>
+              {isSingle ? (
+                <QuestionPresentation question={singleData} />
+              ) : (
+                <p>QuestionSetの一括表示は VariantA をご利用ください</p>
+              )}
             </div>
             <aside className="split-controls">
             <label className="answer-box horizontal">
-              <span>{responseLabel(props.problem)}</span>
+              <span>{isSingle ? responseLabel(singleData) : "こたえ"}</span>
               <input
-                value={props.answer}
-                onChange={(event) => props.setAnswer(event.currentTarget.value)}
+                value={isSingle ? (props.answers[singleData.id] || "") : ""}
+                onChange={(event) => isSingle && props.setAnswer(singleData.id, event.currentTarget.value)}
                 placeholder="入力"
               />
             </label>
             <button className="primary-button" type="button" onClick={props.submitAnswer}>
               こたえる
             </button>
-            {props.feedbackVisible && (
+            {props.feedbackVisible && isSingle && (
               <div className="compact-feedback">
-                <strong>{props.feedbackResult === "correct" ? "正解です" : props.feedbackResult === "dont-know" ? "正解はこちらです" : "ちがうみたい"}</strong>
-                <AnswerEvidence question={props.problem} />
+                <strong>{props.feedbackResults[singleData.id] === "correct" ? "正解です" : props.feedbackResults[singleData.id] === "dont-know" ? "正解はこちらです" : "ちがうみたい"}</strong>
+                <AnswerEvidence question={singleData} />
                 <button
                   className="small-button"
                   type="button"

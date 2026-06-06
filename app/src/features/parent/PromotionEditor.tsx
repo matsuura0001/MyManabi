@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { ExtractionCandidate, PromotionForm } from "../../domain/extraction";
+import type { ProposedItem, SplitOutcome, AnswerSplitEvaluationCase } from "../../domain/evaluation";
 
 export function PromotionEditor({
   candidate,
@@ -13,12 +15,62 @@ export function PromotionEditor({
   form: PromotionForm;
   isPromoted: boolean;
   isPromoting: boolean;
-  promoteCandidate: (candidate: ExtractionCandidate) => Promise<void>;
+  promoteCandidate: (candidate: ExtractionCandidate, splitItems: ProposedItem[] | null) => Promise<void>;
   updatePromotionForm: (candidateId: string, patch: Partial<PromotionForm>) => void;
 }) {
   const { candidateId } = candidate;
   const update = (patch: Partial<PromotionForm>) => updatePromotionForm(candidateId, patch);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  
+  // AI Split UI state
+  const [isSplitting, setIsSplitting] = useState(false);
+  const [splitItems, setSplitItems] = useState<ProposedItem[] | null>(null);
+  const [unassignedText, setUnassignedText] = useState("");
+  const [originalSplitItems, setOriginalSplitItems] = useState<ProposedItem[] | null>(null);
+  const [evaluationSaved, setEvaluationSaved] = useState(false);
+
+  const handleAiSplit = async () => {
+    if (!form.answerValue) return;
+    setIsSplitting(true);
+    setEvaluationSaved(false);
+    try {
+      const outcome = await invoke<SplitOutcome>("split_answer_text", { answerText: form.answerValue });
+      setSplitItems(outcome.items);
+      setOriginalSplitItems(outcome.items);
+      setUnassignedText(outcome.unassignedText || "");
+    } catch (e) {
+      alert(`AI分割に失敗しました: ${e}`);
+    } finally {
+      setIsSplitting(false);
+    }
+  };
+
+  const updateSplitItem = (index: number, value: string) => {
+    if (!splitItems) return;
+    const newItems = [...splitItems];
+    newItems[index] = { ...newItems[index], value };
+    setSplitItems(newItems);
+  };
+
+  const handleSaveEvaluation = async () => {
+    if (!splitItems || !originalSplitItems) return;
+    const evaluationCase: AnswerSplitEvaluationCase = {
+      id: `split-${candidateId}-${Date.now()}`,
+      inputText: form.answerValue,
+      expectedItemCount: splitItems.length,
+      ruleOutput: [], // ローカルルールは今回は省略
+      aiOutput: originalSplitItems,
+      finalItems: splitItems,
+      status: "corrected"
+    };
+
+    try {
+      await invoke("save_answer_split_evaluation", { case: evaluationCase });
+      setEvaluationSaved(true);
+    } catch (e) {
+      alert(`評価ハーネスの保存に失敗しました: ${e}`);
+    }
+  };
 
   return (
     <section className="promotion-editor">
@@ -80,7 +132,7 @@ export function PromotionEditor({
           </label>
         )}
 
-        <label className="wide-field">
+        <div className="wide-field">
           <span>答え</span>
           <textarea
             rows={3}
@@ -88,7 +140,109 @@ export function PromotionEditor({
             value={form.answerValue}
             onChange={(e) => update({ answerValue: e.currentTarget.value })}
           />
-        </label>
+          <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="outline-button"
+              onClick={() => {
+                // 将来的にローカルルール分割処理をここに差し込む
+                // 例: const result = applyLocalSplitRules(form.answerValue);
+                // setSplitItems(result);
+                alert("ローカルルールでの自動分割は今後実装予定です");
+              }}
+              disabled={isSplitting || !form.answerValue.trim()}
+            >
+              ルールで自動分割
+            </button>
+            <button 
+              type="button" 
+              className="outline-button" 
+              onClick={handleAiSplit} 
+              disabled={isSplitting || !form.answerValue.trim()}
+            >
+              {isSplitting ? "AIで分割中..." : "AIで小問に分割"}
+            </button>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => {
+                const current = splitItems || [];
+                setSplitItems([...current, { label: `問${current.length + 1}`, value: "", confidence: 1.0 }]);
+                if (!originalSplitItems) setOriginalSplitItems([...current, { label: `問${current.length + 1}`, value: "", confidence: 1.0 }]);
+              }}
+            >
+              手動で小問を追加
+            </button>
+          </div>
+          
+          {splitItems && (
+            <div style={{ marginTop: '1rem', padding: '1rem', background: '#f8f9fa', borderRadius: '4px' }}>
+              <strong>小問の確認と修正</strong>
+              <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.5rem' }}>
+                {splitItems.map((item, i) => (
+                  <label key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <input 
+                      type="text" 
+                      value={item.label} 
+                      onChange={(e) => {
+                        const newItems = [...splitItems];
+                        newItems[i] = { ...newItems[i], label: e.target.value };
+                        setSplitItems(newItems);
+                      }}
+                      style={{ width: '80px' }}
+                    />
+                    <input 
+                      type="text" 
+                      value={item.value} 
+                      onChange={(e) => updateSplitItem(i, e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    <small>({Math.round(item.confidence * 100)}%)</small>
+                    <button
+                      type="button"
+                      className="text-button"
+                      onClick={() => {
+                        const newItems = splitItems.filter((_, index) => index !== i);
+                        setSplitItems(newItems.length > 0 ? newItems : null);
+                      }}
+                      style={{ color: '#d32f2f', padding: '0 0.5rem' }}
+                      title="この小問を削除"
+                    >
+                      ×
+                    </button>
+                  </label>
+                ))}
+              </div>
+              {unassignedText && (
+                <div style={{ marginTop: '0.5rem', color: '#666' }}>
+                  <small>未割り当て: {unassignedText}</small>
+                </div>
+              )}
+              <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
+                <button 
+                  type="button" 
+                  className="small-button" 
+                  onClick={handleSaveEvaluation}
+                  disabled={evaluationSaved}
+                >
+                  {evaluationSaved ? "ハーネスに保存済み" : "分割結果を評価ハーネスとして記録"}
+                </button>
+                <button
+                  type="button"
+                  className="small-button text-button"
+                  onClick={() => {
+                    setSplitItems(null);
+                    setOriginalSplitItems(null);
+                    setUnassignedText("");
+                  }}
+                  style={{ color: '#d32f2f' }}
+                >
+                  小問分割をキャンセル
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </fieldset>
 
       {/* 詳細設定 */}
@@ -119,12 +273,12 @@ export function PromotionEditor({
       </details>
 
       <button
-        className="small-button"
+        className="primary-button"
         disabled={isPromoting || isPromoted || form.answerValue.trim() === ""}
         type="button"
-        onClick={() => promoteCandidate(candidate)}
+        onClick={() => promoteCandidate(candidate, splitItems)}
       >
-        {isPromoted ? "昇格済み" : isPromoting ? "保存中..." : "Question JSON に保存"}
+        {isPromoting ? "保存中..." : isPromoted ? "保存済み" : splitItems ? "QuestionSet として保存" : "Question JSON に保存"}
       </button>
     </section>
   );

@@ -204,15 +204,97 @@ pub fn save_approved_question(data_dir: &Path, question: &Question) -> Result<Qu
     fs::create_dir_all(&questions_dir)
         .map_err(|error| format!("create question bank {}: {error}", questions_dir.display()))?;
     let path = questions_dir.join(format!("{}.json", question.id));
-    if path.exists() {
-        return Err(format!("question already exists: {}", question.id));
-    }
-
     let bytes = serde_json::to_vec_pretty(question)
         .map_err(|error| format!("serialize question {}: {error}", question.id))?;
     fs::write(&path, bytes)
         .map_err(|error| format!("write question {}: {error}", path.display()))?;
     Ok(question.clone())
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteResult {
+    pub deleted_count: u32,
+    pub invalidated_count: u32,
+}
+
+pub fn delete_or_invalidate_question(data_dir: &Path, question_id: &str) -> Result<DeleteResult, String> {
+    validate_question_id(question_id)?;
+    let questions_dir = data_dir.join("content").join("questions");
+    let path = questions_dir.join(format!("{}.json", question_id));
+    if !path.exists() {
+        return Ok(DeleteResult { deleted_count: 0, invalidated_count: 0 });
+    }
+
+    let text = fs::read_to_string(&path)
+        .map_err(|error| format!("read question {}: {error}", path.display()))?;
+    let mut question: Question = serde_json::from_str(&text)
+        .map_err(|error| format!("parse question {}: {error}", path.display()))?;
+
+    // Check if any learner has attempted this question
+    let learners = crate::domain::list_learners(data_dir)?;
+    let mut is_attempted = false;
+    for learner in learners {
+        if let Ok(state) = crate::domain::load_learner_question_state(data_dir, &learner.id, question_id) {
+            if state.attempts > 0 {
+                is_attempted = true;
+                break;
+            }
+        }
+    }
+
+    if is_attempted {
+        question.review_status = "invalidated".to_owned();
+        let bytes = serde_json::to_vec_pretty(&question)
+            .map_err(|error| format!("serialize question {}: {error}", question.id))?;
+        fs::write(&path, bytes)
+            .map_err(|error| format!("write question {}: {error}", path.display()))?;
+        Ok(DeleteResult { deleted_count: 0, invalidated_count: 1 })
+    } else {
+        fs::remove_file(&path)
+            .map_err(|error| format!("delete question {}: {error}", path.display()))?;
+        Ok(DeleteResult { deleted_count: 1, invalidated_count: 0 })
+    }
+}
+
+pub fn delete_or_invalidate_questions_by_source(data_dir: &Path, source_document_id: &str) -> Result<DeleteResult, String> {
+    let questions_dir = data_dir.join("content").join("questions");
+    let entries = match fs::read_dir(&questions_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(DeleteResult { deleted_count: 0, invalidated_count: 0 }),
+        Err(error) => return Err(format!("read question bank {}: {error}", questions_dir.display())),
+    };
+
+    let mut target_question_ids = Vec::new();
+
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+
+        if let Ok(text) = fs::read_to_string(&path) {
+            if let Ok(question) = serde_json::from_str::<Question>(&text) {
+                if question.source.document_id.as_deref() == Some(source_document_id) {
+                    target_question_ids.push(question.id);
+                }
+            }
+        }
+    }
+
+    let mut total_deleted = 0;
+    let mut total_invalidated = 0;
+
+    for id in target_question_ids {
+        let res = delete_or_invalidate_question(data_dir, &id)?;
+        total_deleted += res.deleted_count;
+        total_invalidated += res.invalidated_count;
+    }
+
+    Ok(DeleteResult {
+        deleted_count: total_deleted,
+        invalidated_count: total_invalidated,
+    })
 }
 
 fn is_presentable(question: &Question) -> bool {

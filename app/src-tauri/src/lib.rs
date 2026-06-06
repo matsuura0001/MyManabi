@@ -8,19 +8,21 @@ pub mod ai_client;
 pub mod question_bank;
 pub mod selection;
 pub mod source_document;
+pub mod question_set;
+pub mod evaluation_harness;
 
 use codex::SpikeOutcome;
 use question_bank::{Answer, Question, Source};
 use serde::Deserialize;
 use domain::Learner;
 use selection::QuestionQueueItem;
-use learning_event::LearningEvent;
+use learning_event::{LearningEvent, TodayLearningStats};
 
 /// Connectivity spike: drive `codex app-server` for one text turn and return
 /// the signed-in account plus the generated text.
 #[tauri::command]
 async fn codex_spike(prompt: String) -> Result<SpikeOutcome, String> {
-    codex::run_spike(&prompt).await
+    codex::run_spike(&prompt, None).await
 }
 
 /// Load approved questions from `<DATA_DIR>/content/questions/*.json`.
@@ -85,6 +87,15 @@ fn save_learning_event(
     Ok(())
 }
 
+#[tauri::command]
+fn get_today_learning_stats(
+    data_dir: Option<String>,
+    learner_id: String,
+) -> Result<TodayLearningStats, String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    learning_event::get_today_learning_stats(&data_dir, &learner_id)
+}
+
 fn resolve_data_dir(data_dir: Option<String>) -> Result<std::path::PathBuf, String> {
     data_dir
         .map(std::path::PathBuf::from)
@@ -118,6 +129,15 @@ fn list_source_documents(
 ) -> Result<Vec<source_document::SourceDocument>, String> {
     let data_dir = resolve_data_dir(data_dir)?;
     source_document::list_source_documents(&data_dir)
+}
+
+#[tauri::command]
+fn delete_source_document(
+    data_dir: Option<String>,
+    source_document_id: String,
+) -> Result<question_bank::DeleteResult, String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    source_document::delete_source_document(&data_dir, &source_document_id)
 }
 
 /// Run the local extraction worker over a stored source and return question candidates for
@@ -305,6 +325,19 @@ fn promote_extraction_candidate(
                 .answer_candidates
                 .iter()
                 .find(|answer| answer.answer_candidate_id == answer_candidate_id)
+                .cloned()
+                .or_else(|| {
+                    result.candidates.iter().find(|c| c.candidate_id == answer_candidate_id).map(|c| ocr_worker::AnswerCandidateResult {
+                        answer_candidate_id: c.candidate_id.clone(),
+                        page: c.page,
+                        item_label: c.item_label.clone(),
+                        region: c.region.clone(),
+                        region_image_path: c.region_image_path.clone(),
+                        ocr_text: c.ocr_text.clone(),
+                        confidence: c.confidence,
+                        suggested_answer: None,
+                    })
+                })
         });
 
     let question_id = if input.question_id.trim().is_empty() {
@@ -363,10 +396,10 @@ fn promote_extraction_candidate(
             } else {
                 Some(input.answer_value.trim().to_owned())
             },
-            text_value: answer_candidate.map(|_| input.answer_value.trim().to_owned()),
-            document_id: answer_candidate.map(|_| input.source_document_id.clone()),
-            page: answer_candidate.map(|answer| answer.page),
-            region: answer_candidate.map(|answer| question_bank::RegionRatio {
+            text_value: answer_candidate.as_ref().map(|_| input.answer_value.trim().to_owned()),
+            document_id: answer_candidate.as_ref().map(|_| input.source_document_id.clone()),
+            page: answer_candidate.as_ref().map(|answer| answer.page),
+            region: answer_candidate.as_ref().map(|answer| question_bank::RegionRatio {
                 x: answer.region.x,
                 y: answer.region.y,
                 width: answer.region.width,
@@ -378,7 +411,7 @@ fn promote_extraction_candidate(
             rubric: None,
             tags: Vec::new(),
         },
-        source_mapping: answer_candidate.map(|answer| question_bank::SourceMapping {
+        source_mapping: answer_candidate.as_ref().map(|answer| question_bank::SourceMapping {
             question_region_id: Some(candidate.candidate_id.clone()),
             answer_region_id: Some(answer.answer_candidate_id.clone()),
             relation: "answer-key".to_owned(),
@@ -400,6 +433,256 @@ fn promote_extraction_candidate(
     question_bank::save_approved_question(&data_dir, &question)
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PromoteToSetInput {
+    source_document_id: String,
+    candidate_id: String,
+    set_id: Option<String>,
+    subject: String,
+    unit_id: String,
+    skill_ids: Vec<String>,
+    question_type: String,
+    presentation_type: String,
+    title: String,
+    body: String,
+    note: String,
+    answer_candidate_id: Option<String>,
+    purposes: Vec<String>,
+    items: Vec<codex::ProposedItem>,
+}
+
+#[tauri::command]
+fn promote_extraction_candidate_to_set(
+    data_dir: Option<String>,
+    input: PromoteToSetInput,
+) -> Result<question_set::QuestionSet, String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    let result = ocr_worker::load_extraction_result(&data_dir, &input.source_document_id)?;
+    let candidate = result
+        .candidates
+        .iter()
+        .find(|candidate| candidate.candidate_id == input.candidate_id)
+        .ok_or_else(|| format!("candidate not found: {}", input.candidate_id))?;
+    
+    if candidate.review_status != "adult-approved" {
+        return Err("candidate must be adult-approved before promotion".to_owned());
+    }
+
+    let answer_candidate = input
+        .answer_candidate_id
+        .as_deref()
+        .and_then(|answer_candidate_id| {
+            result
+                .answer_candidates
+                .iter()
+                .find(|answer| answer.answer_candidate_id == answer_candidate_id)
+                .cloned()
+                .or_else(|| {
+                    result.candidates.iter().find(|c| c.candidate_id == answer_candidate_id).map(|c| ocr_worker::AnswerCandidateResult {
+                        answer_candidate_id: c.candidate_id.clone(),
+                        page: c.page,
+                        item_label: c.item_label.clone(),
+                        region: c.region.clone(),
+                        region_image_path: c.region_image_path.clone(),
+                        ocr_text: c.ocr_text.clone(),
+                        confidence: c.confidence,
+                        suggested_answer: None,
+                    })
+                })
+        });
+
+    let set_id = input.set_id.unwrap_or_else(|| format!("set-imported-{}", candidate.candidate_id));
+    
+    let mut question_set_items = Vec::new();
+    let mut order = 1;
+
+    for item in &input.items {
+        let question_id = format!("imported-{}-item{}", candidate.candidate_id, order);
+        question_bank::validate_question_id(&question_id)?;
+        
+        let question = Question {
+            id: question_id.clone(),
+            subject: input.subject.trim().to_owned(),
+            unit_id: input.unit_id.trim().to_owned(),
+            skill_ids: input
+                .skill_ids
+                .iter()
+                .map(|skill| skill.trim().to_owned())
+                .filter(|skill| !skill.is_empty())
+                .collect(),
+            question_type: input.question_type.clone(),
+            title: format!("{} - {}", input.title.trim(), item.label),
+            body: if input.presentation_type == "normalized" { Some(input.body.clone()) } else { None },
+            presentation: if input.presentation_type == "normalized" {
+                None
+            } else {
+                Some(question_bank::Presentation {
+                    r#type: input.presentation_type.clone(),
+                    text: None,
+                    document_id: Some(input.source_document_id.clone()),
+                    page: Some(candidate.page),
+                    region: if input.presentation_type == "source-region" {
+                        Some(question_bank::RegionRatio {
+                            x: candidate.region.x,
+                            y: candidate.region.y,
+                            width: candidate.region.width,
+                            height: candidate.region.height,
+                        })
+                    } else {
+                        None
+                    },
+                    image_path: None,
+                    media_id: None,
+                    transcript: None,
+                    show_transcript: None,
+                })
+            },
+            expected_response: None,
+            note: input.note.clone(),
+            answer: Answer {
+                r#type: if answer_candidate.is_some() {
+                    "source-region".to_owned()
+                } else {
+                    "exact-text".to_owned()
+                },
+                value: if answer_candidate.is_some() {
+                    None
+                } else {
+                    Some(item.value.clone())
+                },
+                text_value: answer_candidate.as_ref().map(|_| item.value.clone()),
+                document_id: answer_candidate.as_ref().map(|_| input.source_document_id.clone()),
+                page: answer_candidate.as_ref().map(|answer| answer.page),
+                region: answer_candidate.as_ref().map(|answer| question_bank::RegionRatio {
+                    x: answer.region.x,
+                    y: answer.region.y,
+                    width: answer.region.width,
+                    height: answer.region.height,
+                }),
+                image_path: None,
+                media_id: None,
+                transcript: None,
+                rubric: None,
+                tags: Vec::new(),
+            },
+            source_mapping: answer_candidate.as_ref().map(|answer| question_bank::SourceMapping {
+                question_region_id: Some(candidate.candidate_id.clone()),
+                answer_region_id: Some(answer.answer_candidate_id.clone()),
+                relation: "answer-key".to_owned(),
+                item_label: candidate.item_label.clone().or_else(|| answer.item_label.clone()),
+                confidence: Some("adult-confirmed".to_owned()),
+            }),
+            source: Source {
+                r#type: "imported".to_owned(),
+                template_id: None,
+                document_id: Some(input.source_document_id.clone()),
+                page: Some(candidate.page),
+                item_label: Some(item.label.clone()),
+            },
+            review_status: "adult-approved".to_owned(),
+            purposes: input.purposes.clone(),
+            assessment: None,
+        };
+
+        question_bank::save_approved_question(&data_dir, &question)?;
+
+        question_set_items.push(question_set::QuestionSetItem {
+            question_id,
+            label: Some(item.label.clone()),
+            order,
+            region_hint: None,
+        });
+
+        order += 1;
+    }
+
+    let mut question_materials = Vec::new();
+    if input.presentation_type == "source-region" || input.presentation_type == "source-page" {
+        question_materials.push(question_set::QuestionSetMaterial {
+            r#type: input.presentation_type.clone(),
+            text: None,
+            document_id: Some(input.source_document_id.clone()),
+            page: Some(candidate.page),
+            region: if input.presentation_type == "source-region" {
+                Some(question_bank::RegionRatio {
+                    x: candidate.region.x,
+                    y: candidate.region.y,
+                    width: candidate.region.width,
+                    height: candidate.region.height,
+                })
+            } else {
+                None
+            },
+            image_path: None,
+            media_id: None,
+        });
+    }
+
+    let mut answer_materials = Vec::new();
+    if let Some(answer) = &answer_candidate {
+        answer_materials.push(question_set::QuestionSetMaterial {
+            r#type: "source-region".to_owned(),
+            text: None,
+            document_id: Some(input.source_document_id.clone()),
+            page: Some(answer.page),
+            region: Some(question_bank::RegionRatio {
+                x: answer.region.x,
+                y: answer.region.y,
+                width: answer.region.width,
+                height: answer.region.height,
+            }),
+            image_path: None,
+            media_id: None,
+        });
+    }
+
+    let question_set = question_set::QuestionSet {
+        id: set_id,
+        source: Source {
+            r#type: "imported".to_owned(),
+            template_id: None,
+            document_id: Some(input.source_document_id.clone()),
+            page: Some(candidate.page),
+            item_label: candidate.item_label.clone(),
+        },
+        question_materials,
+        answer_materials,
+        items: question_set_items,
+    };
+
+    question_set::save_question_set(&data_dir, &question_set)
+}
+
+#[tauri::command]
+fn load_question_sets(data_dir: Option<String>) -> Result<Vec<question_set::QuestionSet>, String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    question_set::load_question_sets(&data_dir)
+}
+
+#[tauri::command]
+fn save_question_set(
+    data_dir: Option<String>,
+    question_set: question_set::QuestionSet,
+) -> Result<question_set::QuestionSet, String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    question_set::save_question_set(&data_dir, &question_set)
+}
+
+#[tauri::command]
+async fn split_answer_text(answer_text: String) -> Result<codex::SplitOutcome, String> {
+    codex::split_answers_via_codex(&answer_text).await
+}
+
+#[tauri::command]
+fn save_answer_split_evaluation(
+    data_dir: Option<String>,
+    case: evaluation_harness::AnswerSplitEvaluationCase,
+) -> Result<(), String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    evaluation_harness::save_answer_split_evaluation(&data_dir, &case)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -412,6 +695,7 @@ pub fn run() {
             import_pdf_from_url,
             import_source_from_path,
             list_source_documents,
+            delete_source_document,
             extract_source_document,
             extract_source_document_with_ai,
             rasterize_source_document,
@@ -420,14 +704,20 @@ pub fn run() {
             get_page_image_path,
             review_extraction_candidate,
             promote_extraction_candidate,
+            promote_extraction_candidate_to_set,
             reextract_candidate_region,
             reextract_candidate_with_ai,
             ocr_source_region,
             list_learners,
             get_question_queue,
             save_learning_event,
+            get_today_learning_stats,
             get_ai_settings,
-            save_ai_settings
+            save_ai_settings,
+            load_question_sets,
+            save_question_set,
+            split_answer_text,
+            save_answer_split_evaluation
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

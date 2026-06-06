@@ -8,6 +8,8 @@
 
 教科書、PDF プリント、問題集から教材を取り込む際の探索仕様は [教材取り込みの探索仕様](content-import.md) を参照。
 
+保護者が登録済みの Question / QuestionSet を確認・管理する画面は [保護者向け問題一覧仕様](parent-question-list.md) を参照。
+
 ## 1. 学習の基本フロー
 
 ### 1.1 通常学習

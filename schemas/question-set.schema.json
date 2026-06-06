@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/mymanabi/question-set.schema.json",
+  "title": "MyManabi question set",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "source",
+    "questionMaterials",
+    "answerMaterials",
+    "items"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["adult-authored", "ai-generated", "local-generated", "imported"] },
+        "templateId": { "type": "string", "minLength": 1 },
+        "documentId": { "type": "string", "minLength": 1 },
+        "page": { "type": "integer", "minimum": 1 },
+        "itemLabel": { "type": "string", "minLength": 1 }
+      }
+    },
+    "questionMaterials": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/material" }
+    },
+    "answerMaterials": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/material" }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["questionId", "order"],
+        "properties": {
+          "questionId": { "type": "string", "minLength": 1 },
+          "label": { "type": "string" },
+          "order": { "type": "integer" },
+          "regionHint": { "$ref": "#/$defs/region" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["text", "source-region", "source-page", "image", "audio"] },
+        "text": { "type": "string", "minLength": 1 },
+        "documentId": { "type": "string", "minLength": 1 },
+        "page": { "type": "integer", "minimum": 1 },
+        "region": { "$ref": "#/$defs/region" },
+        "imagePath": { "type": "string", "minLength": 1 },
+        "mediaId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y": { "type": "number", "minimum": 0, "maximum": 1 },
+        "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+      }
+    }
+  }
+}

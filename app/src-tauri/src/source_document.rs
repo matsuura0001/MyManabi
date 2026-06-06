@@ -176,6 +176,47 @@ pub fn store_source(
     Ok(document)
 }
 
+pub fn delete_source_document(data_dir: &Path, id: &str) -> Result<crate::question_bank::DeleteResult, String> {
+    let metadata_path = data_dir
+        .join("content")
+        .join("source-documents")
+        .join(format!("{}.json", id));
+
+    if !metadata_path.exists() {
+        return Ok(crate::question_bank::DeleteResult { deleted_count: 0, invalidated_count: 0 });
+    }
+
+    let bytes = fs::read(&metadata_path)
+        .map_err(|error| format!("read source document metadata: {error}"))?;
+    let document: SourceDocument = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("parse source document metadata: {error}"))?;
+
+    // Delete related questions or invalidate them
+    let delete_result = crate::question_bank::delete_or_invalidate_questions_by_source(data_dir, id)?;
+
+    // Delete the source file (e.g. PDF/Image)
+    let source_path = data_dir.join(&document.stored_path);
+    if source_path.exists() {
+        fs::remove_file(&source_path).unwrap_or_else(|e| {
+            eprintln!("Failed to remove source file {}: {}", source_path.display(), e);
+        });
+    }
+
+    // Delete extractions directory if it exists
+    let extractions_dir = data_dir.join("content").join("extractions").join(id);
+    if extractions_dir.exists() {
+        fs::remove_dir_all(&extractions_dir).unwrap_or_else(|e| {
+            eprintln!("Failed to remove extractions dir {}: {}", extractions_dir.display(), e);
+        });
+    }
+
+    // Finally delete the metadata json
+    fs::remove_file(&metadata_path)
+        .map_err(|error| format!("delete source document metadata: {error}"))?;
+
+    Ok(delete_result)
+}
+
 fn validate_source(file_name: &str, bytes: &[u8]) -> Result<(&'static str, &'static str), String> {
     let extension = Path::new(file_name)
         .extension()

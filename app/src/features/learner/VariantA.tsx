@@ -1,10 +1,26 @@
 import { Header } from "../../components/Header";
 import { FeedbackBanner } from "../../components/FeedbackBanner";
 import type { LearnerProps } from "./types";
-import { AnswerEvidence, answerLabel, QuestionPresentation, responseLabel } from "./QuestionMedia";
+import { SourceRegionImage, AnswerEvidence, answerLabel, QuestionPresentation, responseLabel } from "./QuestionMedia";
 
 export function VariantA(props: LearnerProps) {
   const currentLearner = props.learners.find(l => l.id === props.currentLearnerId);
+
+  const isSingle = props.playableItem.type === "single";
+  const singleData: any = isSingle ? props.playableItem.data : null;
+  const setData: any = !isSingle ? props.playableItem.data : null;
+  
+  // 共通のメタデータ
+  const firstQuestionId = setData?.items?.[0]?.questionId;
+  const setQuestionTitle = firstQuestionId ? props.getQuestionTitle(firstQuestionId) : undefined;
+  const title = isSingle ? singleData.title : (
+    setQuestionTitle || (setData?.source?.documentId && setData?.source?.page 
+      ? `一括出題 (${setData.source.documentId} P${setData.source.page})` 
+      : "一括出題")
+  );
+  const subject = isSingle ? singleData.subject : "複合";
+  const skillIds = isSingle ? singleData.skillIds : [];
+  const note = isSingle ? singleData.note : undefined;
 
   return (
     <main className="app-shell focus-shell">
@@ -15,7 +31,7 @@ export function VariantA(props: LearnerProps) {
           visible={props.feedbackVisible}
           moveToNextProblem={props.moveToNextProblem}
           setNotice={props.setNotice}
-          expectedAnswer={answerLabel(props.problem)}
+          expectedAnswer={isSingle ? answerLabel(singleData) : "一括出題の答え合わせ完了"}
         />
 
         <div className="learner-workspace">
@@ -41,16 +57,29 @@ export function VariantA(props: LearnerProps) {
               </div>
               <div className="side-meta">
                 <span>教科</span>
-                <strong>{props.problem.subject}</strong>
+                <strong>{subject}</strong>
               </div>
-              {props.problem.skillIds.length > 0 && (
+              {skillIds.length > 0 && (
                 <div className="side-meta">
                   <span>分類</span>
-                  <strong>{props.problem.skillIds.join(" / ")}</strong>
+                  <strong>{skillIds.join(" / ")}</strong>
                 </div>
               )}
-              {props.problem.note && <p className="side-note">{props.problem.note}</p>}
+              {note && <p className="side-note">{note}</p>}
             </div>
+
+            {props.todayStats && props.todayStats.attempted > 0 && (
+              <div className="side-card stats-card">
+                <div className="side-meta">
+                  <span>今日の記録</span>
+                  <strong>{props.todayStats.attempted} 問</strong>
+                </div>
+                <div className="side-meta" style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+                  <span style={{ color: 'green' }}>○ {props.todayStats.correct}</span>
+                  <span style={{ color: 'red' }}>× {props.todayStats.incorrect}</span>
+                </div>
+              </div>
+            )}
 
             {props.notice && <p className="side-notice side-card" role="status">{props.notice}</p>}
           </aside>
@@ -58,20 +87,63 @@ export function VariantA(props: LearnerProps) {
           <article className="problem-sheet wide-sheet">
             <div className="problem-main">
               <div className="problem-copy">
-                <h1>{props.problem.title}</h1>
-                <QuestionPresentation question={props.problem} />
+                <h1 title={title} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h1>
+                {isSingle ? (
+                  <QuestionPresentation question={singleData} />
+                ) : (
+                  <div className="questionset-materials">
+                    {setData.questionMaterials.map((m: any, i: number) => {
+                      if (m.type === "source-region" || m.type === "source-page") {
+                        return <SourceRegionImage key={i} item={m as any} />;
+                      }
+                      return <p key={i}>{m.text || m.type}</p>;
+                    })}
+                  </div>
+                )}
               </div>
 
               {props.feedbackVisible && props.feedbackStyle === "sheet" && (
                 <aside className="feedback-sheet">
-                  <div className="feedback-check">
-                    {props.feedbackResult === "correct" ? "✓" : "×"}
-                  </div>
-                  <div>
-                    <p className="eyebrow">回答を記録しました</p>
-                    <h2>{props.feedbackResult === "correct" ? "正解です" : props.feedbackResult === "dont-know" ? "正解はこちらです" : "ちがうみたい"}</h2>
-                    <p><AnswerEvidence question={props.problem} /></p>
-                  </div>
+                  {isSingle ? (
+                    <>
+                      <div className="feedback-check">
+                        {props.feedbackResults[singleData.id] === "correct" ? "✓" : "×"}
+                      </div>
+                      <div>
+                        <p className="eyebrow">回答を記録しました</p>
+                        <h2>{props.feedbackResults[singleData.id] === "correct" ? "正解です" : props.feedbackResults[singleData.id] === "dont-know" ? "正解はこちらです" : "ちがうみたい"}</h2>
+                        <p><AnswerEvidence question={singleData} /></p>
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <p className="eyebrow">一括回答を記録しました</p>
+                      <h2>
+                        {(() => {
+                          const correctCount = setData.items.filter((item: any) => props.feedbackResults[item.questionId] === "correct").length;
+                          const totalCount = setData.items.length;
+                          const dontKnowCount = setData.items.filter((item: any) => props.feedbackResults[item.questionId] === "dont-know").length;
+                          if (correctCount === totalCount) return "全問正解です！";
+                          if (dontKnowCount === totalCount) return "正解はこちらです";
+                          return `${totalCount}問中 ${correctCount}問正解です`;
+                        })()}
+                      </h2>
+                      {setData.answerMaterials?.length > 0 && (
+                        <div className="questionset-answer-materials" style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                          {setData.answerMaterials.map((m: any, i: number) => {
+                            if (m.type === "source-region" || m.type === "source-page") {
+                              return (
+                                <div key={i} style={{ maxWidth: '400px' }}>
+                                  <SourceRegionImage item={m as any} />
+                                </div>
+                              );
+                            }
+                            return <p key={i}>{m.text || m.type}</p>;
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="feedback-sheet-actions">
                     <button
                       className="secondary-button"
@@ -91,20 +163,60 @@ export function VariantA(props: LearnerProps) {
                 </aside>
               )}
 
-              <div className="answer-row">
-                <label className="answer-box">
-                  <span>{responseLabel(props.problem)}</span>
-                  <input
-                    autoFocus
-                    value={props.answer}
-                    onChange={(event) => props.setAnswer(event.currentTarget.value)}
-                    placeholder="ここに入力"
-                  />
-                </label>
-                <div className="answer-actions">
+              <div className="answer-row-container" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
+                {isSingle ? (
+                  <div className="answer-row" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
+                    <label className="answer-box" style={{ width: '100%' }}>
+                      {responseLabel(singleData) !== "こたえ" && <span>{responseLabel(singleData)}</span>}
+                      <textarea
+                        autoFocus
+                        value={props.answers[singleData.id] || ""}
+                        onChange={(event) => props.setAnswer(singleData.id, event.currentTarget.value)}
+                        placeholder="ここに入力"
+                        rows={3}
+                        style={{ width: '100%' }}
+                      />
+                    </label>
+                    {props.feedbackVisible && props.feedbackStyle === "inline" && (
+                      <div className="inline-feedback-mini" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: props.feedbackResults[singleData.id] === "correct" ? "green" : "red" }}>
+                          {props.feedbackResults[singleData.id] === "correct" ? "✓" : props.feedbackResults[singleData.id] === "dont-know" ? "？" : "×"}
+                        </span>
+                        <AnswerEvidence question={singleData} />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="answer-row" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '0.5rem', flex: 1 }}>
+                    <label className="answer-box" style={{ width: '100%' }}>
+                      <textarea
+                        autoFocus
+                        style={{ width: '100%', minHeight: '150px' }}
+                        value={props.answers[setData.id] !== undefined ? props.answers[setData.id] : setData.items.map((_: any, index: number) => `問${index + 1} [   ]`).join('\n')}
+                        onChange={(event) => props.setAnswer(setData.id, event.currentTarget.value)}
+                        rows={Math.max(5, setData.items.length + 1)}
+                      />
+                    </label>
+                    {props.feedbackVisible && props.feedbackStyle === "inline" && (
+                      <div className="inline-feedback-mini" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {setData.items.map((item: any, index: number) => (
+                           <div key={item.questionId} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                             <span>問{index + 1}: </span>
+                             <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: props.feedbackResults[item.questionId] === "correct" ? "green" : "red" }}>
+                               {props.feedbackResults[item.questionId] === "correct" ? "✓" : props.feedbackResults[item.questionId] === "dont-know" ? "？" : "×"}
+                             </span>
+                           </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                <div className="answer-actions" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'stretch' }}>
                   <button
                     className="primary-button answer-submit"
                     type="button"
+                    style={{ whiteSpace: 'nowrap' }}
                     onClick={
                       props.feedbackVisible && props.feedbackStyle === "inline"
                         ? () => props.moveToNextProblem("次の問題を表示しました。")
@@ -116,6 +228,7 @@ export function VariantA(props: LearnerProps) {
                   <button
                     className="ghost-button answer-submit"
                     type="button"
+                    style={{ whiteSpace: 'nowrap' }}
                     onClick={props.onDontKnow}
                   >
                     分からない
@@ -124,11 +237,7 @@ export function VariantA(props: LearnerProps) {
               </div>
 
               {props.feedbackVisible && props.feedbackStyle === "inline" && (
-                <div className="inline-feedback">
-                  <div>
-                    <strong>{props.feedbackResult === "correct" ? "正解です" : props.feedbackResult === "dont-know" ? "正解はこちらです" : "ちがうみたい"}</strong>
-                    <AnswerEvidence question={props.problem} />
-                  </div>
+                <div className="inline-feedback" style={{ marginTop: '1rem' }}>
                   <button
                     className="secondary-button"
                     type="button"

@@ -4,7 +4,7 @@ import { readVariant, type Variant, type View, type FeedbackStyle } from "./lib/
 import { fallbackProblems } from "./data/fallbackProblems";
 import type { Question } from "./domain/question";
 import type { QuestionSet } from "./domain/questionSet";
-import type { Learner, QuestionQueueItem, LearningEvent } from "./domain/learner";
+import type { Learner, QuestionQueueItem, LearningEvent, TodayLearningStats } from "./domain/learner";
 import { expectedAnswerForQuestion, questionSetExpectedAnswers } from "./domain/importReview.mjs";
 import type { PlayableItem } from "./features/learner/types";
 import { VariantA } from "./features/learner/VariantA";
@@ -30,7 +30,21 @@ function App() {
   const [problems, setProblems] = useState<PlayableItem[]>(fallbackProblems.map(q => ({ type: "single", data: q })));
   const [questionBankSource, setQuestionBankSource] = useState("ブラウザ用の合成問題");
   // 答え合わせ用にすべてのQuestionを保持しておく
+  // 答え合わせ用にすべてのQuestionを保持しておく
   const [allQuestions, setAllQuestions] = useState<Question[]>(fallbackProblems);
+
+  const [todayStats, setTodayStats] = useState<TodayLearningStats | null>(null);
+
+  function fetchTodayStats(learnerId: string = currentLearnerId) {
+    if (!learnerId) return;
+    invoke<TodayLearningStats>("get_today_learning_stats", { learnerId })
+      .then(setTodayStats)
+      .catch(console.error);
+  }
+
+  useEffect(() => {
+    fetchTodayStats(currentLearnerId);
+  }, [currentLearnerId, view]);
 
   const currentProblem = problems.length > 0 ? problems[problemIndex % problems.length] : problems[0];
 
@@ -187,7 +201,9 @@ function App() {
         explanations: [],
         adult_review_required: false,
     };
-    invoke("save_learning_event", { event }).catch(console.error);
+    invoke("save_learning_event", { event })
+      .then(() => fetchTodayStats(currentLearnerId))
+      .catch(console.error);
   }
 
   function moveToNextProblem(message: string) {
@@ -297,6 +313,7 @@ function App() {
     currentLearnerId,
     setCurrentLearnerId: handleLearnerChange,
     getQuestionTitle: (id: string) => allQuestions.find(q => q.id === id)?.title,
+    todayStats,
   };
 
   const ActiveVariant = variant === "A" ? VariantA : VariantB;
@@ -304,7 +321,7 @@ function App() {
   return (
     <>
       {view === "parent" ? (
-        <ParentConsole variant={variant} setView={setView} />
+        <ParentConsole variant={variant} setView={setView} todayStats={todayStats} />
       ) : (
         <ActiveVariant {...learnerProps} />
       )}

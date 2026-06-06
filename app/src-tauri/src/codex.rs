@@ -12,7 +12,7 @@
 use std::path::PathBuf;
 use std::process::Stdio;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::process::{ChildStdin, ChildStdout, Command};
@@ -121,7 +121,7 @@ async fn request(
 }
 
 /// Run the full connectivity spike for a single text turn.
-pub async fn run_spike(prompt: &str) -> Result<SpikeOutcome, String> {
+pub async fn run_spike(prompt: &str, target_model: Option<&str>) -> Result<SpikeOutcome, String> {
     let mut child = codex_command()
         .arg("app-server")
         .stdin(Stdio::piped())
@@ -165,14 +165,13 @@ pub async fn run_spike(prompt: &str) -> Result<SpikeOutcome, String> {
         .map(str::to_owned);
 
     // 4. thread/start — no tools needed for a text turn, so no approvals.
-    let thread = request(
-        &mut stdin,
-        &mut reader,
-        &mut id,
-        "thread/start",
-        json!({ "approvalPolicy": "never", "sandbox": "read-only" }),
-    )
-    .await?;
+    let mut params = json!({ "approvalPolicy": "never", "sandbox": "read-only" });
+    if let Some(m) = target_model {
+        if let Some(obj) = params.as_object_mut() {
+            obj.insert("model".to_owned(), json!(m));
+        }
+    }
+    let thread = request(&mut stdin, &mut reader, &mut id, "thread/start", params).await?;
     let thread_id = thread
         .pointer("/thread/id")
         .and_then(Value::as_str)
@@ -230,4 +229,65 @@ pub async fn run_spike(prompt: &str) -> Result<SpikeOutcome, String> {
         model,
         problem_text: problem_text.trim().to_owned(),
     })
+}
+
+/// Proposed items from AI split
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProposedItem {
+    pub label: String,
+    pub value: String,
+    pub confidence: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SplitOutcome {
+    pub items: Vec<ProposedItem>,
+    #[serde(rename = "unassignedText", default)]
+    pub unassigned_text: String,
+}
+
+/// Run a connectivity spike for splitting answer text into multiple items.
+pub async fn split_answers_via_codex(answer_text: &str) -> Result<SplitOutcome, String> {
+    let prompt = format!(
+        "以下のテキストは解答一覧（またはOCR結果）です。各小問の「問題番号（label）」と「純粋な答え（value）」を抽出してJSONで返してください。\n\
+         余分な前置きや後書きは出力せず、JSONのみを出力してください。\n\
+         出力フォーマット:\n\
+         {{\n\
+           \"items\": [\n\
+             {{ \"label\": \"問1\", \"value\": \"90°\", \"confidence\": 0.95 }}\n\
+           ],\n\
+           \"unassignedText\": \"抽出できなかった残りのテキストがあればここに\"\n\
+         }}\n\
+         \n\
+         対象テキスト:\n\
+         {}",
+        answer_text
+    );
+
+    // ユーザー指定の軽量モデル (gpt-5.4-mini) を指定して実行します。
+    let outcome = run_spike(&prompt, Some("gpt-5.4-mini")).await?;
+    
+    // Attempt to extract JSON from the assistant's response.
+    // The response might be wrapped in ```json ... ``` blocks.
+    let text = outcome.problem_text.trim();
+    let json_str = if let Some(start) = text.find("```json") {
+        if let Some(end) = text[start + 7..].find("```") {
+            &text[start + 7..start + 7 + end]
+        } else {
+            &text[start + 7..]
+        }
+    } else if let Some(start) = text.find("```") {
+         if let Some(end) = text[start + 3..].find("```") {
+            &text[start + 3..start + 3 + end]
+        } else {
+            &text[start + 3..]
+        }
+    } else {
+        text
+    };
+
+    let parsed: SplitOutcome = serde_json::from_str(json_str.trim())
+        .map_err(|e| format!("failed to parse JSON from Codex: {e}\nRaw output:\n{text}"))?;
+
+    Ok(parsed)
 }

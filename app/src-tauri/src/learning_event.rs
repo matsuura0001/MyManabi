@@ -48,6 +48,16 @@ pub struct EventFlags {
     pub anxious: bool,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TodayLearningStats {
+    pub attempted: usize,
+    pub correct: usize,
+    pub incorrect: usize,
+    pub unknown: usize,
+    pub disputed: usize,
+}
+
 pub fn record_learning_event(data_dir: &Path, event: &LearningEvent) -> Result<(), String> {
     crate::domain::validate_learner_id(&event.learner_id)?;
     crate::question_bank::validate_question_id(&event.question)?;
@@ -76,6 +86,57 @@ pub fn record_learning_event(data_dir: &Path, event: &LearningEvent) -> Result<(
         .map_err(|e| format!("failed to write to events file: {}", e))?;
 
     Ok(())
+}
+
+pub fn get_today_learning_stats(data_dir: &Path, learner_id: &str) -> Result<TodayLearningStats, String> {
+    crate::domain::validate_learner_id(learner_id)?;
+
+    let today = Local::now().format("%Y-%m-%d").to_string();
+    let file_path = data_dir
+        .join("learners")
+        .join(learner_id)
+        .join("events")
+        .join(format!("{}.jsonl", today));
+
+    let mut stats = TodayLearningStats {
+        attempted: 0,
+        correct: 0,
+        incorrect: 0,
+        unknown: 0,
+        disputed: 0,
+    };
+
+    if !file_path.exists() {
+        return Ok(stats);
+    }
+
+    let file = fs::File::open(&file_path)
+        .map_err(|e| format!("failed to open events file {}: {}", file_path.display(), e))?;
+    let reader = std::io::BufReader::new(file);
+
+    for line in std::io::BufRead::lines(reader) {
+        if let Ok(line_str) = line {
+            if line_str.trim().is_empty() {
+                continue;
+            }
+            if let Ok(event) = serde_json::from_str::<LearningEvent>(&line_str) {
+                stats.attempted += 1;
+                match event.grading.result.as_str() {
+                    "correct" => stats.correct += 1,
+                    "incorrect" => stats.incorrect += 1,
+                    _ => {}
+                }
+                if event.flags.did_not_know {
+                    stats.unknown += 1;
+                }
+                if event.flags.disputed {
+                    stats.disputed += 1;
+                }
+            }
+        }
+    }
+
+    Ok(stats)
 }
 
 #[cfg(test)]

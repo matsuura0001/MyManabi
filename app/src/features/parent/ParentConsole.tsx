@@ -3,11 +3,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { SourceDocument } from "../../domain/sourceDocument";
 import type { ExtractionResult } from "../../domain/extraction";
+import type { Question } from "../../domain/question";
+import type { QuestionSet } from "../../domain/questionSet";
 import type { Variant, View } from "../../lib/variant";
 import { Header } from "../../components/Header";
 import { SummaryCard } from "../../components/SummaryCard";
+import { fallbackProblems } from "../../data/fallbackProblems";
 import { ImportHistory } from "./ImportHistory";
 import { ExtractionReview } from "./ExtractionReview";
+import { QuestionList } from "./QuestionList";
 import { RegionPlanSelector } from "./RegionPlanSelector";
 
 interface AiProviderConfig {
@@ -26,9 +30,11 @@ interface AiSettings {
 export function ParentConsole({
   variant,
   setView,
+  todayStats,
 }: {
   variant: Variant;
   setView: (view: View) => void;
+  todayStats?: import("../../domain/learner").TodayLearningStats | null;
 }) {
   const [suggestion, setSuggestion] = useState("分数のたし算 / 通分を含む問題");
   const [sent, setSent] = useState(false);
@@ -36,6 +42,11 @@ export function ParentConsole({
   const [useAiOcr, setUseAiOcr] = useState(false);
   const [importedDocument, setImportedDocument] = useState<SourceDocument | null>(null);
   const [sourceDocuments, setSourceDocuments] = useState<SourceDocument[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [questionSets, setQuestionSets] = useState<QuestionSet[]>([]);
+  const [questionListQuery, setQuestionListQuery] = useState("");
+  const [questionListError, setQuestionListError] = useState<string | null>(null);
+  const [questionListLoading, setQuestionListLoading] = useState(false);
   const [showImportHistory, setShowImportHistory] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -49,6 +60,7 @@ export function ParentConsole({
 
   useEffect(() => {
     loadSourceDocuments();
+    loadQuestionList();
     loadAiSettings();
   }, []);
 
@@ -130,6 +142,25 @@ export function ParentConsole({
       setSourceDocuments(await invoke<SourceDocument[]>("list_source_documents"));
     } catch {
       // Browser-only preview does not expose Tauri commands.
+    }
+  }
+
+  async function loadQuestionList() {
+    setQuestionListLoading(true);
+    setQuestionListError(null);
+    try {
+      const [loadedQuestions, loadedSets] = await Promise.all([
+        invoke<Question[]>("load_question_bank").catch(() => fallbackProblems),
+        invoke<QuestionSet[]>("load_question_sets").catch(() => [] as QuestionSet[]),
+      ]);
+      setQuestions(loadedQuestions);
+      setQuestionSets(loadedSets);
+    } catch (caught) {
+      setQuestions(fallbackProblems);
+      setQuestionSets([]);
+      setQuestionListError(`問題一覧を読み込めませんでした。合成問題を表示しています: ${String(caught)}`);
+    } finally {
+      setQuestionListLoading(false);
     }
   }
 
@@ -255,7 +286,7 @@ export function ParentConsole({
         <aside className="parent-sidebar">
           <strong>おうちの人</strong>
           <a className="selected">今日の様子</a>
-          <a>確認問題</a>
+          <a href="#parent-question-list">確認問題</a>
           <a>学習パターン</a>
           <a>公開用レポート</a>
         </aside>
@@ -270,10 +301,10 @@ export function ParentConsole({
         </div>
 
         <div className="summary-row">
-          <SummaryCard label="取り組んだ問題" value="7" unit="問" />
-          <SummaryCard label="正答" value="5" unit="問" />
-          <SummaryCard label="分からない" value="1" unit="件" accent />
-          <SummaryCard label="納得できない" value="1" unit="件" accent />
+          <SummaryCard label="取り組んだ問題" value={todayStats ? todayStats.attempted.toString() : "0"} unit="問" />
+          <SummaryCard label="正答" value={todayStats ? todayStats.correct.toString() : "0"} unit="問" />
+          <SummaryCard label="分からない" value={todayStats ? todayStats.unknown.toString() : "0"} unit="件" accent={!!todayStats && todayStats.unknown > 0} />
+          <SummaryCard label="納得できない" value={todayStats ? todayStats.disputed.toString() : "0"} unit="件" accent={!!todayStats && todayStats.disputed > 0} />
         </div>
 
         <div className="parent-grid">
@@ -317,6 +348,16 @@ export function ParentConsole({
             パターンを確認
           </button>
         </section>
+
+        <QuestionList
+          error={questionListError}
+          loading={questionListLoading}
+          query={questionListQuery}
+          questionSets={questionSets}
+          questions={questions}
+          refresh={loadQuestionList}
+          setQuery={setQuestionListQuery}
+        />
 
         <section className="parent-card report-card">
           <p className="eyebrow">公開用統計</p>

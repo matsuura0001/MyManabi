@@ -47,3 +47,11 @@ export type LearningEvent = {
   explanations: string[];
   adult_review_required: boolean;
 };
+
+export type TodayLearningStats = {
+  attempted: number;
+  correct: number;
+  incorrect: number;
+  unknown: number;
+  disputed: number;
+};

@@ -42,6 +42,7 @@ export function SourceRegionImage({ item }: { item: SourceImageItem }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     setImageUrl(null);
@@ -62,53 +63,90 @@ export function SourceRegionImage({ item }: { item: SourceImageItem }) {
     return <div className="question-media-loading">画像を読み込み中...</div>;
   }
 
-  if (!item.region) {
-    return (
-      <img
-        src={imageUrl}
-        alt="ページ全体"
-        className="source-page-image"
-        onLoad={(event) =>
-          setNaturalSize({
-            width: event.currentTarget.naturalWidth,
-            height: event.currentTarget.naturalHeight,
-          })
-        }
-      />
-    );
-  }
+  const handleExpandToggle = () => setIsExpanded(!isExpanded);
 
-  const { x, y, width, height } = item.region;
-  const pageAspectRatio = naturalSize ? naturalSize.width / naturalSize.height : 1;
-  const regionAspectRatio = pageAspectRatio * (width / height);
+  const renderContent = (expanded: boolean) => {
+    if (!item.region) {
+      return (
+        <img
+          src={imageUrl}
+          alt="ページ全体"
+          className="source-page-image"
+          style={{ 
+            cursor: expanded ? 'zoom-out' : 'zoom-in', 
+            width: expanded ? '90vw' : undefined,
+            maxWidth: expanded ? '90vw' : undefined 
+          }}
+          onLoad={(event) =>
+            setNaturalSize({
+              width: event.currentTarget.naturalWidth,
+              height: event.currentTarget.naturalHeight,
+            })
+          }
+          onClick={(e) => { e.stopPropagation(); handleExpandToggle(); }}
+        />
+      );
+    }
+
+    const { x, y, width, height } = item.region;
+    const pageAspectRatio = naturalSize ? naturalSize.width / naturalSize.height : 1;
+    const regionAspectRatio = pageAspectRatio * (width / height);
+
+    return (
+      <div
+        className={`source-region-frame ${expanded ? 'expanded' : ''}`}
+        style={{
+          aspectRatio: regionAspectRatio,
+          width: expanded ? '90vw' : undefined,
+          maxWidth: expanded ? '90vw' : `min(100%, calc(min(64vh, 620px) * ${regionAspectRatio}))`,
+          cursor: expanded ? 'zoom-out' : 'zoom-in',
+        }}
+        onClick={(e) => { e.stopPropagation(); handleExpandToggle(); }}
+      >
+        <img 
+          src={imageUrl} 
+          alt="出題領域"
+          onLoad={(event) =>
+            setNaturalSize({
+              width: event.currentTarget.naturalWidth,
+              height: event.currentTarget.naturalHeight,
+            })
+          }
+          style={{
+            position: 'absolute',
+            top: `-${(y / height) * 100}%`,
+            left: `-${(x / width) * 100}%`,
+            width: `${(1 / width) * 100}%`,
+            height: 'auto',
+            maxWidth: 'none'
+          }} 
+        />
+      </div>
+    );
+  };
 
   return (
-    <div
-      className="source-region-frame"
-      style={{
-        aspectRatio: regionAspectRatio,
-        maxWidth: `min(100%, calc(min(64vh, 620px) * ${regionAspectRatio}))`,
-      }}
-    >
-      <img 
-        src={imageUrl} 
-        alt="出題領域"
-        onLoad={(event) =>
-          setNaturalSize({
-            width: event.currentTarget.naturalWidth,
-            height: event.currentTarget.naturalHeight,
-          })
-        }
-        style={{
-          position: 'absolute',
-          top: `-${(y / height) * 100}%`,
-          left: `-${(x / width) * 100}%`,
-          width: `${(1 / width) * 100}%`,
-          height: 'auto',
-          maxWidth: 'none'
-        }} 
-      />
-    </div>
+    <>
+      {renderContent(false)}
+      {isExpanded && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            padding: '2rem',
+            overflow: 'auto'
+          }}
+          onClick={handleExpandToggle}
+        >
+          {renderContent(true)}
+        </div>
+      )}
+    </>
   );
 }
 
