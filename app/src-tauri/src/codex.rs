@@ -121,7 +121,7 @@ async fn request(
 }
 
 /// Run the full connectivity spike for a single text turn.
-pub async fn run_spike(prompt: &str, target_model: Option<&str>) -> Result<SpikeOutcome, String> {
+pub async fn run_spike(prompt: &str, target_model: Option<&str>, base64_images: Vec<String>) -> Result<SpikeOutcome, String> {
     let mut child = codex_command()
         .arg("app-server")
         .stdin(Stdio::piped())
@@ -182,6 +182,14 @@ pub async fn run_spike(prompt: &str, target_model: Option<&str>) -> Result<Spike
         .and_then(Value::as_str)
         .map(str::to_owned);
 
+    let mut inputs = vec![json!({ "type": "text", "text": prompt })];
+    for b64 in base64_images {
+        inputs.push(json!({
+            "type": "image_url",
+            "image_url": { "url": format!("data:image/png;base64,{}", b64) }
+        }));
+    }
+
     // 5. turn/start, then accumulate assistant deltas until turn/completed.
     id += 1;
     write_msg(
@@ -192,7 +200,7 @@ pub async fn run_spike(prompt: &str, target_model: Option<&str>) -> Result<Spike
             "method": "turn/start",
             "params": {
                 "threadId": thread_id,
-                "input": [{ "type": "text", "text": prompt }],
+                "input": inputs,
             },
         }),
     )
@@ -265,7 +273,7 @@ pub async fn split_answers_via_codex(answer_text: &str) -> Result<SplitOutcome, 
     );
 
     // ユーザー指定の軽量モデル (gpt-5.4-mini) を指定して実行します。
-    let outcome = run_spike(&prompt, Some("gpt-5.4-mini")).await?;
+    let outcome = run_spike(&prompt, Some("gpt-5.4-mini"), vec![]).await?;
     
     // Attempt to extract JSON from the assistant's response.
     // The response might be wrapped in ```json ... ``` blocks.

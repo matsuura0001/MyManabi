@@ -12,6 +12,7 @@ type AiChatPanelProps = {
 
 export function AiChatPanel({ currentProblem, allQuestions, answers }: AiChatPanelProps) {
   const [prompt, setPrompt] = useState("");
+  const [imagePaths, setImagePaths] = useState<string[]>([]);
   const [outcome, setOutcome] = useState<SpikeOutcome | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -20,13 +21,17 @@ export function AiChatPanel({ currentProblem, allQuestions, answers }: AiChatPan
     if (!currentProblem) return;
     
     let contextText = "以下の問題について質問します。\n\n";
+    const paths: string[] = [];
 
     if (currentProblem.type === "single") {
       const q = currentProblem.data;
       contextText += `【問題文】\n${q.title}\n`;
       if (q.body) contextText += `${q.body}\n`;
       if (q.presentation?.text) contextText += `${q.presentation.text}\n`;
-      if (q.presentation?.imagePath) contextText += `(画像あり: ${q.presentation.imagePath})\n`;
+      if (q.presentation?.imagePath) {
+        contextText += `(画像も送信しました)\n`;
+        paths.push(q.presentation.imagePath);
+      }
       
       const expected = expectedAnswerForQuestion(q);
       contextText += `\n【想定解】\n${expected}\n`;
@@ -49,14 +54,12 @@ export function AiChatPanel({ currentProblem, allQuestions, answers }: AiChatPan
           contextText += `問題: ${q.title}\n`;
           if (q.body) contextText += `${q.body}\n`;
           if (q.presentation?.text) contextText += `${q.presentation.text}\n`;
-          if (q.presentation?.imagePath) contextText += `(画像あり: ${q.presentation.imagePath})\n`;
+          if (q.presentation?.imagePath) {
+            contextText += `(画像も送信しました)\n`;
+            paths.push(q.presentation.imagePath);
+          }
           const expected = expectedAnswers[i]?.value ?? "";
           contextText += `想定解: ${expected}\n`;
-          // QuestionSet uses multiline answer separated by newline, or single answer array
-          // In App.tsx:
-          // const fullAnswer = answers[currentProblem.data.id] || "";
-          // const lines = fullAnswer.split('\n');
-          // For simplicity, just get lines[i] here
           const fullAnswer = answers[set.id] || "";
           const lines = fullAnswer.split('\n');
           const userAnswer = lines[i];
@@ -68,6 +71,13 @@ export function AiChatPanel({ currentProblem, allQuestions, answers }: AiChatPan
     }
 
     setPrompt((prev) => prev ? `${contextText}\n\n---\n\n${prev}` : `${contextText}\n\n`);
+    setImagePaths((prev) => {
+      const newPaths = [...prev];
+      for (const p of paths) {
+        if (!newPaths.includes(p)) newPaths.push(p);
+      }
+      return newPaths;
+    });
   }
 
   async function askAi() {
@@ -76,7 +86,7 @@ export function AiChatPanel({ currentProblem, allQuestions, answers }: AiChatPan
     setError(null);
     setOutcome(null);
     try {
-      setOutcome(await invoke<SpikeOutcome>("codex_spike", { prompt }));
+      setOutcome(await invoke<SpikeOutcome>("codex_spike", { prompt, imagePaths }));
     } catch (caught) {
       setError(String(caught));
     } finally {

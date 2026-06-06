@@ -23,8 +23,24 @@ use learning_event::{LearningEvent, TodayLearningStats};
 /// Connectivity spike: drive `codex app-server` for one text turn and return
 /// the signed-in account plus the generated text.
 #[tauri::command]
-async fn codex_spike(prompt: String) -> Result<SpikeOutcome, String> {
-    codex::run_spike(&prompt, None).await
+async fn codex_spike(data_dir: Option<String>, prompt: String, image_paths: Option<Vec<String>>) -> Result<SpikeOutcome, String> {
+    let data_dir = resolve_data_dir(data_dir)?;
+    let mut base64_images = Vec::new();
+    
+    if let Some(paths) = image_paths {
+        for path in paths {
+            let full_path = data_dir.join(&path);
+            if let Ok(bytes) = std::fs::read(&full_path) {
+                use base64::Engine;
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                base64_images.push(b64);
+            } else {
+                return Err(format!("Failed to read image at {}", full_path.display()));
+            }
+        }
+    }
+    
+    codex::run_spike(&prompt, None, base64_images).await
 }
 
 /// Load approved questions from `<DATA_DIR>/content/questions/*.json`.
