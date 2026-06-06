@@ -1,6 +1,5 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
 import type { Question } from "../../domain/question";
+import { useImageUrl } from "./useImageUrl";
 
 type AnswerImageViewerProps = {
   answer: Question["answer"];
@@ -8,62 +7,32 @@ type AnswerImageViewerProps = {
   onImageClick: (imagePath: string) => void;
 };
 
+function toImageSource(
+  answer: Question["answer"]
+): Parameters<typeof useImageUrl>[0] {
+  if (!answer) return null;
+  if ((answer.type === "image" || answer.type === "exemplar-image") && answer.imagePath)
+    return { kind: "file", path: answer.imagePath };
+  if (
+    (answer.type === "source-region" || answer.type === "source-page") &&
+    answer.documentId &&
+    answer.page !== undefined
+  )
+    return { kind: "page", documentId: answer.documentId, page: answer.page };
+  return null;
+}
+
+const IMAGE_ANSWER_TYPES = new Set(["image", "exemplar-image", "source-region", "source-page"]);
+
 export function AnswerImageViewer({
   answer,
   questionId,
   onImageClick,
 }: AnswerImageViewerProps) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setImageUrl(null);
-    setError(null);
-    setLoading(false);
-
-    if (!answer) return;
-
-    // Direct image files
-    if (
-      (answer.type === "image" || answer.type === "exemplar-image") &&
-      answer.imagePath
-    ) {
-      setImageUrl(convertFileSrc(answer.imagePath));
-      return;
-    }
-
-    // Source document regions
-    if (
-      (answer.type === "source-region" || answer.type === "source-page") &&
-      answer.documentId &&
-      answer.page !== undefined
-    ) {
-      setLoading(true);
-      invoke<string>("get_page_image_path", {
-        sourceDocumentId: answer.documentId,
-        page: answer.page,
-      })
-        .then((path) => {
-          setImageUrl(convertFileSrc(path));
-          setError(null);
-        })
-        .catch((err) => {
-          setError(String(err));
-          setImageUrl(null);
-        })
-        .finally(() => setLoading(false));
-    }
-  }, [answer]);
+  const { imageUrl, loading, error } = useImageUrl(toImageSource(answer));
 
   // Don't render for non-image answer types
-  if (
-    !answer ||
-    (answer.type !== "image" &&
-      answer.type !== "exemplar-image" &&
-      answer.type !== "source-region" &&
-      answer.type !== "source-page")
-  ) {
+  if (!answer || !IMAGE_ANSWER_TYPES.has(answer.type)) {
     return null;
   }
 
@@ -101,7 +70,7 @@ export function AnswerImageViewer({
       />
       <button
         type="button"
-        className="answer-image-view-button"
+        className="image-view-button"
         onClick={() => onImageClick(imageUrl)}
       >
         答え画像を見る

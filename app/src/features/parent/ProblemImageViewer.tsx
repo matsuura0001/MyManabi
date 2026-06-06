@@ -1,6 +1,5 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
 import type { Question } from "../../domain/question";
+import { useImageUrl } from "./useImageUrl";
 
 type ProblemImageViewerProps = {
   presentation: Question["presentation"] | undefined;
@@ -8,48 +7,27 @@ type ProblemImageViewerProps = {
   onImageClick: (imagePath: string) => void;
 };
 
+function toImageSource(
+  presentation: Question["presentation"] | undefined
+): Parameters<typeof useImageUrl>[0] {
+  if (!presentation) return null;
+  if (presentation.type === "image" && presentation.imagePath)
+    return { kind: "file", path: presentation.imagePath };
+  if (
+    (presentation.type === "source-page" || presentation.type === "source-region") &&
+    presentation.documentId &&
+    presentation.page !== undefined
+  )
+    return { kind: "page", documentId: presentation.documentId, page: presentation.page };
+  return null;
+}
+
 export function ProblemImageViewer({
   presentation,
   questionId,
   onImageClick,
 }: ProblemImageViewerProps) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setImageUrl(null);
-    setError(null);
-    setLoading(false);
-
-    if (!presentation) return;
-
-    if (presentation.type === "image" && presentation.imagePath) {
-      setImageUrl(convertFileSrc(presentation.imagePath));
-      return;
-    }
-
-    if (
-      (presentation.type === "source-page" || presentation.type === "source-region") &&
-      presentation.documentId &&
-      presentation.page !== undefined
-    ) {
-      setLoading(true);
-      invoke<string>("get_page_image_path", {
-        sourceDocumentId: presentation.documentId,
-        page: presentation.page,
-      })
-        .then((path) => {
-          setImageUrl(convertFileSrc(path));
-          setError(null);
-        })
-        .catch((err) => {
-          setError(String(err));
-          setImageUrl(null);
-        })
-        .finally(() => setLoading(false));
-    }
-  }, [presentation]);
+  const { imageUrl, loading, error } = useImageUrl(toImageSource(presentation));
 
   // Don't render for text/audio or missing presentation
   if (!presentation || presentation.type === "text" || presentation.type === "audio") {

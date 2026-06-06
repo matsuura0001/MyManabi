@@ -1,37 +1,12 @@
 import type { Question } from "../../domain/question";
 import type { QuestionSet, QuestionSetMaterial } from "../../domain/questionSet";
+import { sourceLabel, statusLabel } from "./labels";
 
 type QuestionSetDetailModalProps = {
   questionSet: QuestionSet;
   questions: Question[];
   onClose: () => void;
 };
-
-function sourceLabel(sourceType: QuestionSet["source"]["type"]) {
-  switch (sourceType) {
-    case "adult-authored":
-      return "手作成";
-    case "ai-generated":
-      return "AI生成";
-    case "local-generated":
-      return "端末生成";
-    case "imported":
-      return "取り込み";
-  }
-}
-
-function statusLabel(status: Question["reviewStatus"]) {
-  switch (status) {
-    case "adult-approved":
-      return "承認済み";
-    case "auto-approved":
-      return "自動承認";
-    case "draft":
-      return "下書き";
-    case "suspended":
-      return "停止中";
-  }
-}
 
 function materialPreview(material: QuestionSetMaterial) {
   if (material.type === "text" && material.text) return material.text;

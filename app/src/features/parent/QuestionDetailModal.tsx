@@ -4,93 +4,20 @@ import type { QuestionSet } from "../../domain/questionSet";
 import { ProblemImageViewer } from "./ProblemImageViewer";
 import { AnswerImageViewer } from "./AnswerImageViewer";
 import { ImageLightbox } from "./ImageLightbox";
+import {
+  sourceLabel,
+  statusLabel,
+  answerTypeLabel,
+  purposeLabel,
+  questionTypeLabel,
+  expectedResponseLabel,
+} from "./labels";
 
 type QuestionDetailModalProps = {
   question: Question;
   parentQuestionSet: QuestionSet | undefined;
   onClose: () => void;
 };
-
-function sourceLabel(sourceType: Question["source"]["type"]) {
-  switch (sourceType) {
-    case "adult-authored":
-      return "手作成";
-    case "ai-generated":
-      return "AI生成";
-    case "local-generated":
-      return "端末生成";
-    case "imported":
-      return "取り込み";
-  }
-}
-
-function statusLabel(status: Question["reviewStatus"]) {
-  switch (status) {
-    case "adult-approved":
-      return "承認済み";
-    case "auto-approved":
-      return "自動承認";
-    case "draft":
-      return "下書き";
-    case "suspended":
-      return "停止中";
-  }
-}
-
-function purposeLabel(purpose: string) {
-  switch (purpose) {
-    case "learning":
-      return "学習";
-    case "review":
-      return "復習";
-    case "assessment":
-      return "測定";
-    default:
-      return purpose;
-  }
-}
-
-function questionTypeLabel(type: string) {
-  switch (type) {
-    case "numeric":
-      return "数値回答";
-    case "kanji":
-      return "漢字";
-    case "multiple-choice":
-      return "選択肢";
-    case "word-problem":
-      return "応用問題";
-    case "free-text":
-      return "自由記述";
-    case "handwriting":
-      return "手書き";
-    case "speech":
-      return "音声";
-    default:
-      return type;
-  }
-}
-
-function expectedResponseLabel(type: string) {
-  switch (type) {
-    case "text":
-      return "テキスト";
-    case "numeric":
-      return "数値";
-    case "choice":
-      return "選択肢";
-    case "handwriting":
-      return "手書き";
-    case "speech":
-      return "音声";
-    case "drawing":
-      return "描画";
-    case "parent-review":
-      return "保護者レビュー";
-    default:
-      return type;
-  }
-}
 
 export function QuestionDetailModal({
   question,
@@ -158,7 +85,10 @@ export function QuestionDetailModal({
             <dl>
               <div>
                 <dt>答えタイプ</dt>
-                <dd>{question.answer.type}</dd>
+                <dd>
+                  {answerTypeLabel(question.answer.type)}{" "}
+                  <span className="internal-value">({question.answer.type})</span>
+                </dd>
               </div>
               {question.answer.value && (
                 <div>
